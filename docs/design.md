@@ -128,6 +128,7 @@ One WebSocket per player. JSON text frames for game messages, binary frames for 
 | C → S | `build`, `sell_building`, `mortgage`, `unmortgage` | Property management |
 | C → S | `trade_propose`, `trade_accept`, `trade_reject`, `trade_counter` | Trades |
 | C → S | `emote`, `mute_player` | Social (`mute_player` room-wide is host-only) |
+| C → S | `chat` | Typed message (iPhone players): text ≤ 200 chars, recipients all or 1–3 ids |
 | C → S | voice frame | Clip with recipients: all, or 1–3 player ids |
 | S → C | `welcome` | playerId, session token, full state |
 | S → C | `state` | Full state (join, reconnect, version gap) |
@@ -135,6 +136,7 @@ One WebSocket per player. JSON text frames for game messages, binary frames for 
 | S → C | `dice_commit`, `dice_reveal` | Fair-dice proof before and after each roll |
 | S → C | `error` | Rejected action with reason code (sent only to the sender) |
 | S → C | voice frame | Relayed clip, only to its recipients |
+| S → C | `chat_msg` | Relayed chat message, only to its recipients (and the sender) |
 
 **Error reason codes (minimum set):** `not_your_turn`, `illegal_phase`, `insufficient_funds`, `not_owner`, `incomplete_set`, `uneven_build`, `no_houses_left`, `no_hotels_left`, `mortgaged`, `trade_invalid`, `host_only`, `room_full`, `bad_code`, `bad_password`, `rate_limited`, `version_mismatch`, `unknown_message`.
 

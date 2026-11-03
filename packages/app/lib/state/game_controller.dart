@@ -42,7 +42,11 @@ class GameView {
     this.emotes = const {},
     this.popups = const [],
     this.lastEvents = const [],
+    this.chat = const [],
   });
+
+  /// Recent chat messages, oldest first (memory only, last 50).
+  final List<ChatBroadcast> chat;
 
   /// Connection status.
   final ConnStatus status;
@@ -120,6 +124,7 @@ class GameView {
     Map<String, (Emote, int)>? emotes,
     List<Popup>? popups,
     List<GameEvent>? lastEvents,
+    List<ChatBroadcast>? chat,
   }) =>
       GameView(
         status: status ?? this.status,
@@ -138,6 +143,7 @@ class GameView {
         emotes: emotes ?? this.emotes,
         popups: popups ?? this.popups,
         lastEvents: lastEvents ?? this.lastEvents,
+        chat: chat ?? this.chat,
       );
 }
 
@@ -305,6 +311,10 @@ class GameController extends Notifier<GameView> {
       case ErrorMsg():
         state = state.copyWith(
             error: errorText(m.code, m.message), errorCode: m.code);
+      case ChatBroadcast():
+        final chat = [...state.chat, m];
+        state = state.copyWith(
+            chat: chat.length > 50 ? chat.sublist(chat.length - 50) : chat);
       case EmoteBroadcast():
         state = state.copyWith(emotes: {
           ...state.emotes,

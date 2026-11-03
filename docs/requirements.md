@@ -24,7 +24,7 @@ Vyapari is an Indian-themed property trading board game for 2–8 players. It wo
 | Language | Dart for app, server, rules and bots |
 | Money | Starting cash ₹15,00,000 per player; ₹2,00,000 salary for passing Start |
 | Card decks | Vaaippu (Chance-style) and Undiyal (Community-Chest-style) |
-| Chat | Push-to-talk voice only; no typed chat |
+| Chat | Push-to-talk voice; typed chat for iPhone players only (decided 2026-11-03, because iOS cannot reliably play Opus clips) |
 | Release | Internal use first; no ads, no paid version |
 
 ## 3. Multiplayer modes
@@ -115,7 +115,10 @@ Server runs the full classic ruleset; house rules are host-selectable toggles.
 - **FR-LOBBY-1:** Players pick a nickname and token. No login for local play.
 - **FR-LOBBY-2:** Host sees the player list, can kick, set house rules, starting cash and turn timer, and fill seats with bots.
 - **FR-LOBBY-3:** Host starts when 2+ players are ready; turn order by opening roll.
-- **FR-SOCIAL-1:** Quick emotes only ("Aiyo!", "Semma!", thumbs up). No typed chat anywhere.
+- **FR-SOCIAL-1:** Quick emotes ("Aiyo!", "Semma!", thumbs up) for everyone.
+- **FR-CHAT-1:** iPhone players (app and Safari) get a text box instead of the talk button. Recipients work like voice: everyone, or 1–3 players privately.
+- **FR-CHAT-2:** Every player sees chat messages (feed plus a short arrival banner); Android and web cannot type.
+- **FR-CHAT-3:** Max 200 characters, 1 message per second per player; per-player mute and host room-mute apply; never stored on the server or in saves.
 - **FR-SOCIAL-2:** Activity log of every roll, purchase, rent, card, trade and bankruptcy, visible to all.
 - **FR-RECON-1:** A dropped player can rejoin within 3 minutes using a session token; meanwhile a bot plays their turn or it auto-skips (host's choice).
 - **FR-BOT-1:** Bots at Easy / Medium / Hard; Hard values colour-set completion and trades sensibly.

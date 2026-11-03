@@ -44,6 +44,7 @@ class Room {
         dice = FairDice(rng) {
     _voiceLimiter = RateLimiter(config.voiceInterval, clock);
     _emoteLimiter = RateLimiter(const Duration(milliseconds: 800), clock);
+    _chatLimiter = RateLimiter(const Duration(milliseconds: 1000), clock);
   }
 
   /// Room code.
@@ -92,6 +93,8 @@ class Room {
   final Set<String> mutedRoomWide = {};
   late final RateLimiter _voiceLimiter;
   late final RateLimiter _emoteLimiter;
+  late final RateLimiter _chatLimiter;
+  int _chatSeq = 0;
   final Map<int, DiceCommit> _commits = {};
   final List<DiceReveal> _reveals = [];
   Timer? _botTimer;
@@ -189,6 +192,10 @@ class Room {
           return;
         }
         broadcast(EmoteBroadcast(from: playerId, emote: (m as EmoteMsg).emote));
+        return;
+      case 'chat':
+        final error = onChat(playerId, m as ChatMsg);
+        if (error != null) _error(playerId, error, env.id);
         return;
       case 'mute_player':
         final t = m as PlayerTargetMsg;
@@ -330,6 +337,37 @@ class Room {
       default:
         return null;
     }
+  }
+
+  // ---------------------------------------------------------------- chat
+
+  /// Relays a typed chat message from [from] to everyone or to 1–3 chosen
+  /// players. Like voice, it is held in memory only and never saved.
+  ErrorCode? onChat(String from, ChatMsg m) {
+    final text = m.text.trim();
+    if (text.isEmpty || text.length > maxChatLength) {
+      return ErrorCode.invalidAction;
+    }
+    final to = m.to.toSet();
+    if (to.length > 3 ||
+        to.contains(from) ||
+        to.any((id) => state.player(id) == null)) {
+      return ErrorCode.invalidAction;
+    }
+    if (!_chatLimiter.tryAcquire(from)) return ErrorCode.rateLimited;
+    // A room-muted player's messages reach nobody.
+    if (mutedRoomWide.contains(from)) return null;
+    final out = ChatBroadcast(
+        id: 'm${++_chatSeq}', from: from, text: text, to: to.toList());
+    if (to.isEmpty) {
+      broadcast(out);
+    } else {
+      // The sender gets a copy so their own chat shows the message.
+      for (final id in {...to, from}) {
+        _send(id, out);
+      }
+    }
+    return null;
   }
 
   // ---------------------------------------------------------------- voice

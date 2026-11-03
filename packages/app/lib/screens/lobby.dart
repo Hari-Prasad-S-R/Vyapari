@@ -6,6 +6,7 @@ import 'package:vyapari_protocol/vyapari_protocol.dart';
 
 import '../state/game_controller.dart';
 import '../ui.dart';
+import '../widgets/chat.dart';
 import '../widgets/talk.dart';
 import 'home.dart';
 
@@ -194,10 +195,11 @@ class LobbyScreen extends ConsumerWidget {
     return Scaffold(
       appBar:
           AppBar(title: const Text('Lobby'), automaticallyImplyLeading: false),
-      floatingActionButton: view.offline ? null : const TalkButton(),
+      floatingActionButton: view.offline ? null : const CommsButton(),
       body: SafeArea(
         child: Column(children: [
           const SpeakingBanner(),
+          const ChatBanner(),
           if (view.error != null)
             Padding(
               padding: const EdgeInsets.all(8),

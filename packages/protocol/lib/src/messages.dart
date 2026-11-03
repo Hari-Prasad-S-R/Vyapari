@@ -316,6 +316,27 @@ final class TradeCounterMsg extends ClientMessage {
       {'tradeId': tradeId, 'give': give.toJson(), 'get': get.toJson()};
 }
 
+/// Longest chat message, in characters.
+const maxChatLength = 200;
+
+/// Send a typed chat message (iPhone players, who cannot play Opus voice).
+final class ChatMsg extends ClientMessage {
+  /// Creates the message; empty [to] means everyone.
+  const ChatMsg(this.text, {this.to = const []});
+
+  @override
+  String get type => 'chat';
+
+  /// Message text.
+  final String text;
+
+  /// Recipients (1–3 player ids), or empty for everyone.
+  final List<String> to;
+
+  @override
+  Map<String, Object?> toData() => {'text': text, if (to.isNotEmpty) 'to': to};
+}
+
 /// Send a fixed emote.
 final class EmoteMsg extends ClientMessage {
   /// Creates the message.
@@ -510,6 +531,39 @@ final class ErrorMsg extends ServerMessage {
       };
 }
 
+/// A chat message relayed by the server, only to its recipients.
+final class ChatBroadcast extends ServerMessage {
+  /// Creates the message.
+  const ChatBroadcast({
+    required this.id,
+    required this.from,
+    required this.text,
+    this.to = const [],
+  });
+
+  @override
+  String get type => 'chat_msg';
+
+  /// Message id.
+  final String id;
+
+  /// Sender (stamped by the server).
+  final String from;
+
+  /// Text.
+  final String text;
+
+  /// Recipients; empty = everyone.
+  final List<String> to;
+
+  /// Whether only chosen players received it.
+  bool get isPrivate => to.isNotEmpty;
+
+  @override
+  Map<String, Object?> toData() =>
+      {'id': id, 'from': from, 'text': text, if (to.isNotEmpty) 'to': to};
+}
+
 /// Someone sent an emote.
 final class EmoteBroadcast extends ServerMessage {
   /// Creates the message.
@@ -579,6 +633,8 @@ final Map<String, Message Function(Map<String, Object?>)> decoders = {
         get: TradeSide.fromJson((d['get'] as Map).cast()),
       ),
   'emote': (d) => EmoteMsg(Emote.values.byName(d['emote'] as String)),
+  'chat': (d) => ChatMsg(d['text'] as String,
+      to: (d['to'] as List? ?? const []).cast<String>()),
   'sync': (d) => SyncMsg(d['lastVersion'] as int),
   for (final t in SimpleIntent.types) t: (_) => SimpleIntent(t),
   'welcome': (d) => Welcome(
@@ -601,6 +657,12 @@ final Map<String, Message Function(Map<String, Object?>)> decoders = {
   'dice_reveal': (d) => DiceRevealMsg(DiceReveal.fromJson(d)),
   'error': (d) => ErrorMsg(ErrorCode.fromWire(d['code'] as String),
       message: d['message'] as String? ?? '', refId: d['refId'] as String?),
+  'chat_msg': (d) => ChatBroadcast(
+        id: d['id'] as String,
+        from: d['from'] as String,
+        text: d['text'] as String,
+        to: (d['to'] as List? ?? const []).cast<String>(),
+      ),
   'emote_shown': (d) => EmoteBroadcast(
       from: d['from'] as String,
       emote: Emote.values.byName(d['emote'] as String)),

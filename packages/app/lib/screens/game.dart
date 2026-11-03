@@ -8,6 +8,7 @@ import 'package:vyapari_protocol/vyapari_protocol.dart';
 import '../state/game_controller.dart';
 import '../ui.dart';
 import '../widgets/board.dart';
+import '../widgets/chat.dart';
 import '../widgets/talk.dart';
 import 'home.dart';
 import 'trade.dart';
@@ -109,15 +110,20 @@ class GameScreen extends ConsumerWidget {
     }
 
     return Scaffold(
-      floatingActionButton: view.offline ? null : const TalkButton(),
+      floatingActionButton: view.offline ? null : const CommsButton(),
       body: SafeArea(
         child: Stack(children: [
           body,
           const Positioned(
               top: 6,
-              left: 0,
-              right: 0,
-              child: Center(child: SpeakingBanner())),
+              left: 8,
+              right: 8,
+              child: Center(
+                  child: Column(mainAxisSize: MainAxisSize.min, children: [
+                SpeakingBanner(),
+                SizedBox(height: 4),
+                ChatBanner(),
+              ]))),
           if (incoming.isNotEmpty)
             Positioned(
               top: 48,
@@ -487,9 +493,13 @@ class LogView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => DefaultTabController(
-        length: 2,
+        length: 3,
         child: Column(children: [
-          const TabBar(tabs: [Tab(text: 'Activity'), Tab(text: 'Verify dice')]),
+          const TabBar(tabs: [
+            Tab(text: 'Activity'),
+            Tab(text: 'Chat'),
+            Tab(text: 'Verify dice'),
+          ]),
           Expanded(
             child: TabBarView(children: [
               ListView(
@@ -504,6 +514,7 @@ class LogView extends StatelessWidget {
                     ),
                 ],
               ),
+              const ChatPanel(),
               DiceVerifyView(dice: view.dice),
             ]),
           ),
