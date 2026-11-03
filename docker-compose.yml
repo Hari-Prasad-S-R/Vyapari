@@ -1,0 +1,32 @@
+# Online Vyapari on a home lab: Caddy terminates TLS (wss://) in front of
+# the game server. Set VYAPARI_DOMAIN to your DNS name before `up`.
+services:
+  vyapari:
+    build: .
+    image: vyapari-server:latest
+    restart: unless-stopped
+    environment:
+      VYAPARI_PORT: "47800"
+      VYAPARI_DB: /data/vyapari.db
+    volumes:
+      - vyapari-data:/data
+    expose:
+      - "47800"
+
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    depends_on: [vyapari]
+    ports:
+      - "443:443"
+      - "80:80"
+    environment:
+      VYAPARI_DOMAIN: ${VYAPARI_DOMAIN:-localhost}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - ./packages/app/build/web:/srv/web:ro
+
+volumes:
+  vyapari-data:
+  caddy-data:

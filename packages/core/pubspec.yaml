@@ -1,0 +1,16 @@
+name: vyapari_core
+description: Pure Dart models, rules engine, fair dice and bots for Vyapari.
+version: 0.1.0
+publish_to: none
+resolution: workspace
+
+environment:
+  sdk: ^3.6.0
+
+dependencies:
+  collection: ^1.18.0
+  crypto: ^3.0.3
+
+dev_dependencies:
+  lints: ^6.0.0
+  test: ^1.25.0

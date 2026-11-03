@@ -1,0 +1,68 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    - cron: "30 20 * * *" # nightly 10,000-game simulation (02:00 IST)
+
+jobs:
+  dart:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - run: sudo apt-get update && sudo apt-get install -y libsqlite3-dev
+      - run: flutter pub get
+      - name: core stays pure (no Flutter, no dart:io)
+        run: tool/check_core_pure.sh
+      - name: bundled board matches assets/boards
+        run: diff -r assets/boards/india packages/app/assets/boards/india
+      - name: format
+        run: dart format --output=none --set-exit-if-changed packages server_bin
+      - name: analyze
+        run: |
+          dart analyze --fatal-infos packages/core packages/protocol packages/server server_bin
+          (cd packages/app && flutter analyze)
+      - name: test core (1,000 simulated games per push)
+        run: (cd packages/core && dart test)
+      - name: nightly 10,000 games
+        if: github.event_name == 'schedule'
+        env:
+          VYAPARI_SIM_GAMES: "10000"
+        run: (cd packages/core && dart test test/simulation_test.dart)
+      - name: test protocol
+        run: (cd packages/protocol && dart test)
+      - name: test server
+        run: (cd packages/server && dart test)
+      - name: test app
+        run: (cd packages/app && flutter test --exclude-tags golden)
+
+  build:
+    if: github.ref == 'refs/heads/main'
+    needs: dart
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - run: flutter pub get
+      - run: (cd packages/app && flutter build apk --release && flutter build web --release)
+      - run: dart compile exe server_bin/bin/main.dart -o build/vyapari_server
+      - uses: actions/upload-artifact@v4
+        with:
+          name: vyapari-main
+          path: |
+            packages/app/build/app/outputs/flutter-apk/app-release.apk
+            packages/app/build/web
+            build/vyapari_server

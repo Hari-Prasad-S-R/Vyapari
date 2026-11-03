@@ -1,0 +1,17 @@
+# Dart / Flutter
+.dart_tool/
+**/.dart_tool/
+.packages
+build/
+**/build/
+*.iml
+.idea/
+.vscode/
+
+# Local data and saves
+data/
+*.db
+
+# Android signing (never commit)
+packages/app/android/key.properties
+packages/app/android/app/*.jks

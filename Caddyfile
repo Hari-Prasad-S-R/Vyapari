@@ -1,0 +1,9 @@
+{$VYAPARI_DOMAIN} {
+	encode gzip
+	# Game WebSocket and API go to the server; Caddy upgrades to wss:// automatically.
+	@game path /ws /health /rooms
+	reverse_proxy @game vyapari:47800
+	# Web client (flutter build web) for join-only players.
+	root * /srv/web
+	file_server
+}

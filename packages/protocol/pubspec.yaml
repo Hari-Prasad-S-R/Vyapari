@@ -1,0 +1,17 @@
+name: vyapari_protocol
+description: Vyapari network messages, JSON codecs and the binary voice frame.
+version: 0.1.0
+publish_to: none
+resolution: workspace
+
+environment:
+  sdk: ^3.6.0
+
+dependencies:
+  collection: ^1.18.0
+  vyapari_core:
+    path: ../core
+
+dev_dependencies:
+  lints: ^6.0.0
+  test: ^1.25.0
