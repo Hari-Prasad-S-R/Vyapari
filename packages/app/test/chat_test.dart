@@ -21,7 +21,7 @@ void main() {
     final c = await pumpWith(tester, const GameScreen(),
         view: GameView(state: s, me: 'p0'),
         size: const Size(800, 1000),
-        overrides: [textChatProvider.overrideWithValue(true)]);
+        overrides: [chatOnlyProvider.overrideWithValue(true)]);
     await tester.runAsync(() => c
         .read(gameProvider.notifier)
         .playOffline(fake, name: 'A', token: Token.kite));
@@ -41,13 +41,13 @@ void main() {
     expect(sent.to, ['p2']);
   });
 
-  testWidgets('Android: no text box, but chat from iPhone players shows up',
+  testWidgets('Android: chat and talk buttons; incoming chat shows up',
       (tester) async {
     final s = started();
     final c = await pumpWith(tester, const GameScreen(),
         view: GameView(state: s, me: 'p1'), size: const Size(1440, 900));
     expect(find.byKey(const ValueKey('talk-button')), findsOneWidget);
-    expect(find.byType(TextField), findsNothing);
+    expect(find.byKey(const ValueKey('chat-button')), findsOneWidget);
     c
         .read(gameProvider.notifier)
         .debugSetView(GameView(state: s, me: 'p1', chat: const [
@@ -56,7 +56,6 @@ void main() {
     await tester.pump();
     expect(find.byKey(const ValueKey('chat-banner')), findsOneWidget);
     expect(find.textContaining('Semma move!'), findsWidgets);
-    expect(find.byType(TextField), findsNothing, reason: 'reading only');
     await tester.pump(const Duration(seconds: 6));
     expect(find.byKey(const ValueKey('chat-banner')), findsNothing);
   });
@@ -72,5 +71,28 @@ void main() {
     await tester.pump();
     expect(find.text('hello'), findsOneWidget);
     expect(find.text('spam'), findsNothing);
+  });
+
+  testWidgets('Android players can type and send too', (tester) async {
+    final s = started(n: 3);
+    final fake = FakeTransport(
+        reply: (m) => m is Hello
+            ? [Welcome(playerId: 'p1', sessionToken: 't', state: s)]
+            : []);
+    final c = await pumpWith(tester, const GameScreen(),
+        view: GameView(state: s, me: 'p1'), size: const Size(800, 1000));
+    await tester.runAsync(() => c
+        .read(gameProvider.notifier)
+        .playOffline(fake, name: 'B', token: Token.kite));
+    await tester.pump();
+    await tester.tap(find.byKey(const ValueKey('chat-button')));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+        find.byKey(const ValueKey('chat-field')).last, 'Ok, deal!');
+    await tester.tap(find.byKey(const ValueKey('chat-send')).last);
+    await tester.pump();
+    final sent = fake.sent.whereType<ChatMsg>().single;
+    expect(sent.text, 'Ok, deal!');
+    expect(sent.to, isEmpty, reason: 'broadcast by default');
   });
 }

@@ -11,20 +11,30 @@ import '../state/game_controller.dart';
 import '../ui.dart';
 import 'talk.dart';
 
-/// Whether this device types chat instead of push-to-talk. iPhones (app
-/// and Safari) cannot reliably play the Opus clips other phones send, so
-/// they get typed chat; everyone else keeps voice and reads chat.
-final textChatProvider =
+/// Whether this device uses chat instead of push-to-talk. iPhones (app and
+/// Safari) cannot reliably play the Opus clips other phones send, so they
+/// chat only; every other device has both chat and voice.
+final chatOnlyProvider =
     Provider<bool>((ref) => defaultTargetPlatform == TargetPlatform.iOS);
 
-/// Talk button, or chat button on devices that type.
+/// Chat button, plus the talk button on devices that do voice.
 class CommsButton extends ConsumerWidget {
-  /// Creates the button.
+  /// Creates the buttons.
   const CommsButton({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) =>
-      ref.watch(textChatProvider) ? const ChatButton() : const TalkButton();
+  Widget build(BuildContext context, WidgetRef ref) {
+    if (ref.watch(chatOnlyProvider)) return const ChatButton();
+    return const Row(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.end,
+      children: [
+        Padding(padding: EdgeInsets.only(bottom: 6), child: ChatButton()),
+        SizedBox(width: 10),
+        TalkButton(),
+      ],
+    );
+  }
 }
 
 /// Floating chat button with a count of messages since it was last opened.
@@ -41,7 +51,9 @@ class _ChatButtonState extends ConsumerState<ChatButton> {
 
   @override
   Widget build(BuildContext context) {
-    final count = ref.watch(gameProvider.select((g) => g.chat.length));
+    // Only messages from other players count as unread.
+    final count = ref.watch(
+        gameProvider.select((g) => g.chat.where((m) => m.from != g.me).length));
     final unread = count - _seen;
     return Badge(
       isLabelVisible: unread > 0,
@@ -53,7 +65,8 @@ class _ChatButtonState extends ConsumerState<ChatButton> {
         onPressed: () async {
           await showChatSheet(context);
           if (mounted) {
-            setState(() => _seen = ref.read(gameProvider).chat.length);
+            final g = ref.read(gameProvider);
+            setState(() => _seen = g.chat.where((m) => m.from != g.me).length);
           }
         },
         child: const Icon(Icons.chat_bubble, color: Colors.white),
@@ -104,7 +117,6 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
 
   @override
   Widget build(BuildContext context) {
-    final canType = ref.watch(textChatProvider);
     final view = ref.watch(gameProvider);
     final to = ref.watch(voiceProvider.select((v) => v.recipients));
     final names = {
@@ -112,47 +124,46 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
     };
     return Column(children: [
       const Expanded(child: ChatFeed()),
-      if (canType)
-        SafeArea(
-          top: false,
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(8, 4, 8, 8),
-            child: Column(mainAxisSize: MainAxisSize.min, children: [
-              Align(
-                alignment: Alignment.centerLeft,
-                child: TextButton.icon(
-                  key: const ValueKey('chat-recipients'),
-                  onPressed: () => showRecipientPicker(context, ref),
-                  icon: Icon(to.isEmpty ? Icons.campaign : Icons.lock),
-                  label: Text(to.isEmpty
-                      ? 'To: everyone'
-                      : 'To: ${to.map((id) => names[id] ?? '?').join(', ')}'),
+      SafeArea(
+        top: false,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(8, 4, 8, 8),
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+            Align(
+              alignment: Alignment.centerLeft,
+              child: TextButton.icon(
+                key: const ValueKey('chat-recipients'),
+                onPressed: () => showRecipientPicker(context, ref),
+                icon: Icon(to.isEmpty ? Icons.campaign : Icons.lock),
+                label: Text(to.isEmpty
+                    ? 'To: everyone'
+                    : 'To: ${to.map((id) => names[id] ?? '?').join(', ')}'),
+              ),
+            ),
+            Row(children: [
+              Expanded(
+                child: TextField(
+                  key: const ValueKey('chat-field'),
+                  controller: _text,
+                  maxLength: maxChatLength,
+                  textInputAction: TextInputAction.send,
+                  onSubmitted: (_) => _send(),
+                  decoration: const InputDecoration(
+                      hintText: 'Message',
+                      border: OutlineInputBorder(),
+                      counterText: ''),
                 ),
               ),
-              Row(children: [
-                Expanded(
-                  child: TextField(
-                    key: const ValueKey('chat-field'),
-                    controller: _text,
-                    maxLength: maxChatLength,
-                    textInputAction: TextInputAction.send,
-                    onSubmitted: (_) => _send(),
-                    decoration: const InputDecoration(
-                        hintText: 'Message',
-                        border: OutlineInputBorder(),
-                        counterText: ''),
-                  ),
-                ),
-                IconButton(
-                  key: const ValueKey('chat-send'),
-                  tooltip: 'Send',
-                  onPressed: _send,
-                  icon: const Icon(Icons.send),
-                ),
-              ]),
+              IconButton(
+                key: const ValueKey('chat-send'),
+                tooltip: 'Send',
+                onPressed: _send,
+                icon: const Icon(Icons.send),
+              ),
             ]),
-          ),
+          ]),
         ),
+      ),
     ]);
   }
 }

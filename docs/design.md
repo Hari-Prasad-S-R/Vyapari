@@ -128,7 +128,7 @@ One WebSocket per player. JSON text frames for game messages, binary frames for 
 | C → S | `build`, `sell_building`, `mortgage`, `unmortgage` | Property management |
 | C → S | `trade_propose`, `trade_accept`, `trade_reject`, `trade_counter` | Trades |
 | C → S | `emote`, `mute_player` | Social (`mute_player` room-wide is host-only) |
-| C → S | `chat` | Typed message (iPhone players): text ≤ 200 chars, recipients all or 1–3 ids |
+| C → S | `chat` | Typed message: text ≤ 200 chars, recipients all or 1–3 ids |
 | C → S | voice frame | Clip with recipients: all, or 1–3 player ids |
 | S → C | `welcome` | playerId, session token, full state |
 | S → C | `state` | Full state (join, reconnect, version gap) |

@@ -224,7 +224,8 @@ void main() {
           findsOneWidget);
     });
 
-    testWidgets('no text input on lobby, game or results', (tester) async {
+    testWidgets('text input appears only inside the chat sheet',
+        (tester) async {
       await pumpWith(tester, const GameScreen(),
           view: GameView(state: started(), me: 'p0'));
       expect(find.byType(TextField), findsNothing);

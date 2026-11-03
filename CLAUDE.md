@@ -8,7 +8,7 @@ Read this file first in every session. Full details live in `docs/`.
 
 - **Local mode (Mini Militia style):** one phone hosts the game server inside the app; others join over the same Wi-Fi or the host's hotspot. No internet needed.
 - **Online mode:** the same server code runs in Docker (home lab or cloud); players join by room code.
-- **Voice first:** push-to-talk voice clips (walkie-talkie). iPhone players, who cannot reliably play the Opus clips other phones send, type short chat messages instead; everyone can read them.
+- **Voice and chat:** push-to-talk voice clips (walkie-talkie) plus short typed chat for everyone. iPhones, which cannot reliably play the Opus clips other phones send, use chat only.
 - **Platforms:** Android, iOS, web (web is join-only, online server only).
 - **Release:** internal use first. No ads, no payments.
 
@@ -51,7 +51,7 @@ vyapari/
 4. **Money is `int` rupees.** Never `double`. Display with Indian grouping (₹15,00,000).
 5. **Dice come only from the server**, using a CSPRNG with commit–reveal (hash before roll, key revealed after).
 6. **Total money is conserved.** Players + bank + Free Parking pot always equals the starting total. Simulation tests assert this.
-7. **Typed chat on iPhone only.** Android and web talk with push-to-talk voice and fixed emotes; iPhones (app and Safari) get a text box instead of the talk button. Everyone reads chat. Messages: ≤ 200 characters, 1 per second, everyone or 1–3 players.
+7. **Chat for everyone, voice where it works.** Every player can type chat and send fixed emotes. Android and web also have push-to-talk; iPhones (app and Safari) have chat instead of the talk button. Messages: ≤ 200 characters, 1 per second, everyone or 1–3 players.
 8. **Voice clips and chat messages are never written to disk** on any server, nor added to the game log or saves; drop after delivery.
 9. **Every message carries the protocol version.** Unknown or malformed messages produce a typed error, never a crash.
 10. **Board and cards come from JSON** (`board.json`, `cards.json`). No hard-coded tile data in code.
