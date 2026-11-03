@@ -49,7 +49,7 @@ abstract class Bot {
       final bid = auctionBid(s, me);
       return bid == null ? const [] : [Bid(me, bid)];
     }
-    if (s.currentPlayer != me) return const [];
+    if (s.actingPlayer != me) return const [];
     switch (s.phase) {
       case GamePhase.awaitingRoll:
         if (p.inJail) out.addAll(jailChoice(s, p));
@@ -64,7 +64,7 @@ abstract class Bot {
         out.addAll(unmortgageChoices(s, p));
         out.add(s.rollAgain ? Roll.intent(me) : EndTurn(me));
       case GamePhase.raiseCash:
-        if (p.cash >= s.totalDebt) {
+        if (p.cash >= s.debtOf(me)) {
           out.add(PayDebt(me));
         } else {
           out.addAll(liquidationSteps(s, me));

@@ -1,3 +1,9 @@
+/// How a nearby game was found.
+enum Found { udp, mdns }
+
+/// mDNS / Bonjour service type for Vyapari hosts.
+const mdnsServiceType = '_vyapari._tcp';
+
 /// A game found on the local network.
 class NearbyHost {
   /// Creates an entry.
@@ -9,7 +15,11 @@ class NearbyHost {
     required this.players,
     required this.maxPlayers,
     required this.hasPassword,
+    this.via = const {Found.udp},
   });
+
+  /// Discovery methods that heard this host.
+  final Set<Found> via;
 
   /// Room name.
   final String name;
@@ -72,4 +82,29 @@ class LocalHostHandle {
   final port = int.tryParse(uri.queryParameters['port'] ?? '') ?? 47800;
   if (ip == null || code == null) return null;
   return (ip: ip, port: port, code: code);
+}
+
+/// Merges games heard over UDP and mDNS. The same host (room code + port)
+/// appears once; UDP data wins because it carries the live player count.
+List<NearbyHost> mergeNearby(List<NearbyHost> udp, List<NearbyHost> mdns) {
+  final out = <String, NearbyHost>{};
+  for (final g in mdns) {
+    out['${g.code}:${g.port}'] = g;
+  }
+  for (final g in udp) {
+    final key = '${g.code}:${g.port}';
+    final other = out[key];
+    out[key] = NearbyHost(
+      name: g.name,
+      code: g.code,
+      ip: g.ip,
+      port: g.port,
+      players: g.players,
+      maxPlayers: g.maxPlayers,
+      hasPassword: g.hasPassword,
+      via: {...g.via, ...?other?.via},
+    );
+  }
+  final list = out.values.toList()..sort((a, b) => a.name.compareTo(b.name));
+  return list;
 }

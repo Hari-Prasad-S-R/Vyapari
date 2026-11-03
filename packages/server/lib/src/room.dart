@@ -544,7 +544,7 @@ class Room {
   }
 
   void _syncTurnTimer() {
-    final key = '${state.currentPlayer}:${state.turnNumber}';
+    final key = _turnKey0();
     final sec = state.rules.turnTimerSec;
     final inPlay =
         state.phase != GamePhase.lobby && state.phase != GamePhase.gameOver;
@@ -563,10 +563,18 @@ class Room {
       _timedOutKey = key;
       broadcast(NoticeMsg('timeout',
           text: "Time's up — the turn is being finished",
-          data: {'playerId': state.currentPlayer}));
+          data: {'playerId': _actor}));
       _scheduleBots(immediate: true);
     });
   }
+
+  /// Who must act now: a debtor raising cash, else the current player.
+  String? get _actor => state.actingPlayer ?? state.currentPlayer;
+
+  /// Timer key: a new turn, or a different player raising cash, gets a
+  /// fresh turn timer.
+  String _turnKey0() =>
+      '$_actor:${state.turnNumber}:${state.phase == GamePhase.raiseCash}';
 
   /// Turn time-out uses a cautious autopilot that never buys.
   late final Bot _autopilot = _AutoPilot(rng);
@@ -586,8 +594,7 @@ class Room {
           ? _bots.putIfAbsent('cover:$id', () => MediumBot(rng))
           : _autopilot;
     }
-    if (id == state.currentPlayer &&
-        _timedOutKey == '${state.currentPlayer}:${state.turnNumber}') {
+    if (id == _actor && _timedOutKey == _turnKey0()) {
       return _autopilot;
     }
     return null;
@@ -611,7 +618,7 @@ class Room {
       final bot = _controllerFor(t.to);
       if (bot != null && _runBot(bot, t.to)) return true;
     }
-    final cur = state.currentPlayer;
+    final cur = _actor;
     if (cur == null) return false;
     final bot = _controllerFor(cur);
     if (bot == null) return false;

@@ -50,7 +50,7 @@ void main() {
       const session = Session(playerId: 'a', token: 'xyz', lastSeen: 42);
       expect(roundTrip(session, (x) => x.toJson(), Session.fromJson), session);
 
-      const debt = Debt(amount: 5000, creditorId: 'b');
+      const debt = Debt(debtorId: 'a', amount: 5000, creditorId: 'b');
       expect(roundTrip(debt, (x) => x.toJson(), Debt.fromJson), debt);
 
       final state = startedGame();

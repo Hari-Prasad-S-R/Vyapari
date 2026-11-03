@@ -82,8 +82,21 @@ extension GameQueries on GameState {
     return v;
   }
 
-  /// Total owed by the current player.
-  int get totalDebt => debts.fold(0, (s, d) => s + d.amount);
+  /// Player who must act now: the first debtor while cash is being raised,
+  /// nobody during an auction (anyone may bid), else the current player.
+  String? get actingPlayer => switch (phase) {
+        GamePhase.raiseCash when debts.isNotEmpty => debts.first.debtorId,
+        GamePhase.auction || GamePhase.lobby || GamePhase.gameOver => null,
+        _ => currentPlayer,
+      };
+
+  /// Total that [playerId] owes.
+  int debtOf(String? playerId) => debts
+      .where((d) => d.debtorId == playerId)
+      .fold(0, (s, d) => s + d.amount);
+
+  /// Total owed by the player now raising cash.
+  int get totalDebt => debtOf(debts.isEmpty ? null : debts.first.debtorId);
 
   /// Active players ranked by net worth (highest first).
   List<String> get ranking {

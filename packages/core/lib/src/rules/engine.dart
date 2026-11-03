@@ -73,6 +73,8 @@ class _Draft {
         auction = s.auction,
         trades = [...s.trades],
         debts = [...s.debts],
+        auctionQueue = [...s.auctionQueue],
+        resumePhase = s.resumePhase,
         rollAgain = s.rollAgain,
         lastDice = s.lastDice,
         turnNumber = s.turnNumber,
@@ -94,6 +96,8 @@ class _Draft {
   Auction? auction;
   final List<Trade> trades;
   final List<Debt> debts;
+  final List<int> auctionQueue;
+  GamePhase? resumePhase;
   bool rollAgain;
   List<int> lastDice;
   int turnNumber;
@@ -127,6 +131,8 @@ class _Draft {
         auction: auction,
         trades: trades,
         debts: debts,
+        auctionQueue: auctionQueue,
+        resumePhase: resumePhase,
         rollAgain: rollAgain,
         lastDice: lastDice,
         turnNumber: turnNumber,
@@ -244,15 +250,19 @@ class _Draft {
     }
   }
 
+  /// Whether [id] has unpaid debts.
+  bool owes(String id) => debts.any((d) => d.debtorId == id);
+
   /// Charges [payer]; if they cannot pay now the charge becomes a debt.
   /// Returns whether it was paid immediately.
   bool charge(String payer, int amount, {String? to, bool fine = false}) {
     if (amount <= 0) return true;
     final debt = Debt(
+        debtorId: payer,
         amount: amount,
         creditorId: to,
         toPot: to == null && fine && rules.freeParkingPot);
-    if (debts.isEmpty && p(payer).cash >= amount) {
+    if (!owes(payer) && p(payer).cash >= amount) {
       settle(payer, debt);
       return true;
     }
@@ -322,7 +332,7 @@ class _Draft {
         final o = own(tile.index);
         if (o == null) {
           // With unpaid debts the purchase offer is skipped.
-          if (debts.isEmpty) _offerBuy = true;
+          if (!owes(id)) _offerBuy = true;
           return;
         }
         if (o.ownerId == id || o.mortgaged) return;
@@ -392,9 +402,14 @@ class _Draft {
           charge(id, e.amount, to: other.id);
         }
       case CardEffectType.collectFromEachPlayer:
-        // Each player pays what cash they have, up to the amount.
-        for (final other in players.where((x) => !x.bankrupt && x.id != id)) {
-          transfer(other.id, id, min(other.cash, e.amount));
+        // Official rules: a player who cannot pay owes the drawer and must
+        // raise cash (or go bankrupt to them) before play continues. Short
+        // payers settle one at a time in seat order after the drawer.
+        final start = players.indexWhere((x) => x.id == id);
+        for (var k = 1; k < players.length; k++) {
+          final other = players[(start + k) % players.length];
+          if (other.bankrupt) continue;
+          charge(other.id, e.amount, to: id);
         }
       case CardEffectType.moveTo:
         moveTo(id, e.target);
@@ -488,6 +503,8 @@ class _Draft {
     phase = GamePhase.gameOver;
     auction = null;
     debts.clear();
+    auctionQueue.clear();
+    resumePhase = null;
     rollAgain = false;
     log('game_over', '${winner == null ? 'Nobody' : name(winner)} wins ($why)',
         playerId: winner, data: {'reason': why});
@@ -563,25 +580,23 @@ class _Draft {
         if (rollAgain) _fail(ErrorCode.illegalPhase);
         advanceTurn();
       case PayDebt():
-        requireCurrent(a.playerId);
-        requirePhase({GamePhase.raiseCash});
-        final total = debts.fold(0, (s, d) => s + d.amount);
+        final mine = _requireDebtor(a.playerId);
+        final total = mine.fold(0, (s, d) => s + d.amount);
         if (p(a.playerId).cash < total) _fail(ErrorCode.insufficientFunds);
-        for (final debt in debts) {
+        for (final debt in mine) {
           settle(a.playerId, debt);
         }
-        debts.clear();
+        debts.removeWhere((d) => d.debtorId == a.playerId);
         log('debt_paid', '${name(a.playerId)} paid ${formatRupees(total)} owed',
             playerId: a.playerId, data: {'amount': total});
-        phase = GamePhase.manage;
+        _afterDebtResolved();
       case DeclareBankruptcy():
-        requireCurrent(a.playerId);
-        requirePhase({GamePhase.raiseCash});
-        final total = debts.fold(0, (s, d) => s + d.amount);
+        final mine = _requireDebtor(a.playerId);
+        final total = mine.fold(0, (s, d) => s + d.amount);
         if (p(a.playerId).cash >= total) _fail(ErrorCode.invalidAction);
-        final creditors = debts.map((d) => d.creditorId).toSet();
+        final creditors = mine.map((d) => d.creditorId).toSet();
         final creditor = creditors.length == 1 ? creditors.first : null;
-        _bankrupt(a.playerId, creditor);
+        _bankrupt(a.playerId, creditor, advance: a.playerId == current);
       case Build():
         _build(a.playerId, a.tileIndex);
       case SellBuilding():
@@ -630,6 +645,21 @@ class _Draft {
         if (phase == GamePhase.lobby) _fail(ErrorCode.illegalPhase);
         endByNetWorth('time limit reached');
     }
+  }
+
+  /// Debts of [id], who must be the player now raising cash.
+  List<Debt> _requireDebtor(String id) {
+    requirePhase({GamePhase.raiseCash});
+    if (debts.isEmpty || debts.first.debtorId != id) {
+      _fail(ErrorCode.notYourTurn);
+    }
+    return debts.where((d) => d.debtorId == id).toList();
+  }
+
+  /// Next debtor raises cash, or play goes back to the current player.
+  void _afterDebtResolved() {
+    if (phase == GamePhase.gameOver || phase == GamePhase.auction) return;
+    phase = debts.isNotEmpty ? GamePhase.raiseCash : GamePhase.manage;
   }
 
   // ---------------------------------------------------------------- lobby
@@ -875,7 +905,23 @@ class _Draft {
       log('auction_none', 'Nobody bought ${tile.name}; it stays with the bank',
           data: {'tile': tile.index});
     }
-    phase = GamePhase.manage;
+    if (_startNextBankAuction()) return;
+    phase = resumePhase ?? GamePhase.manage;
+    resumePhase = null;
+  }
+
+  /// Starts the next queued bank auction; returns false if none is left.
+  bool _startNextBankAuction() {
+    while (auctionQueue.isNotEmpty) {
+      final index = auctionQueue.removeAt(0);
+      if (own(index) != null) continue;
+      auction = Auction(tileIndex: index, minStep: config.auctionMinStep);
+      phase = GamePhase.auction;
+      log('auction', 'The bank auctions ${tiles[index].name}',
+          data: {'tile': index, 'bank': true});
+      return true;
+    }
+    return false;
   }
 
   void _payJail(String id) {
@@ -1118,8 +1164,16 @@ class _Draft {
           (x) => x
               .copyWith(getOutCards: [...x.getOutCards, ...p(id).getOutCards]));
     } else {
+      // Official rules: the bank auctions every property at once, free of
+      // mortgage. They are queued and auctioned one after another below.
       paysBank(id, cash);
+      final owned = ownership
+          .where((o) => o.ownerId == id)
+          .map((o) => o.tileIndex)
+          .toList()
+        ..sort();
       ownership.removeWhere((o) => o.ownerId == id);
+      auctionQueue.addAll(owned);
       for (final c in p(id).getOutCards) {
         returnCardToDeck(c);
       }
@@ -1136,12 +1190,22 @@ class _Draft {
     log('bankrupt',
         '${pl.name} is bankrupt; assets go to ${creditor == null ? 'the bank' : name(creditor)}',
         playerId: id, data: {'creditor': creditor});
+    // Their debts are written off, and so are debts owed to them.
+    debts.removeWhere((d) => d.debtorId == id || d.creditorId == id);
     if (current == id) debts.clear();
     if (advance) {
       advanceTurn();
     } else if (players.where((x) => !x.bankrupt).length <= 1) {
       final last = players.where((x) => !x.bankrupt);
       endGame(last.isEmpty ? null : last.first.id, 'last player standing');
+    } else if (phase == GamePhase.raiseCash) {
+      _afterDebtResolved();
+    }
+    if (phase != GamePhase.gameOver &&
+        auction == null &&
+        auctionQueue.isNotEmpty) {
+      resumePhase = phase;
+      _startNextBankAuction();
     }
   }
 }

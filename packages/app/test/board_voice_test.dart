@@ -35,14 +35,20 @@ void main() {
       });
     }
 
-    for (final size in const [Size(360, 740), Size(1440, 900), Size(3840, 2160)]) {
-      testWidgets('draws square and fully visible at ${size.width.toInt()} px', (tester) async {
+    for (final size in const [
+      Size(360, 740),
+      Size(1440, 900),
+      Size(3840, 2160)
+    ]) {
+      testWidgets('draws square and fully visible at ${size.width.toInt()} px',
+          (tester) async {
         final s = withOwned(started(n: 4), 'p1', [37, 39], houses: 5);
         await pumpWith(tester, Scaffold(body: BoardView(state: s)),
             view: GameView(state: s, me: 'p0'), size: size);
         expect(tester.takeException(), isNull);
         final box = tester.renderObject<RenderBox>(find
-            .descendant(of: find.byType(BoardView), matching: find.byType(CustomPaint))
+            .descendant(
+                of: find.byType(BoardView), matching: find.byType(CustomPaint))
             .first);
         expect(box.size.width, box.size.height);
         expect(box.size.width, lessThanOrEqualTo(size.shortestSide));
@@ -57,7 +63,8 @@ void main() {
             tester,
             RepaintBoundary(
                 key: const ValueKey('board'),
-                child: SizedBox(width: size, height: size, child: BoardView(state: s))),
+                child: SizedBox(
+                    width: size, height: size, child: BoardView(state: s))),
             view: GameView(state: s, me: 'p0'),
             size: Size(size, size));
         await expectLater(find.byKey(const ValueKey('board')),
@@ -65,19 +72,25 @@ void main() {
       }
     }, tags: ['golden']);
 
-    testWidgets('a 7-tile move passing Start steps through each tile in < 2 s', (tester) async {
+    testWidgets('a 7-tile move passing Start steps through each tile in < 2 s',
+        (tester) async {
       var s = withPlayer(started(), 'p0', (p) => p.copyWith(position: 36));
       final c = await pumpWith(tester, Scaffold(body: BoardView(state: s)),
           view: GameView(state: s, me: 'p0'));
       final key = GlobalKey<BoardViewState>();
       await tester.pumpWidget(UncontrolledProviderScope(
-          container: c, child: MaterialApp(home: Scaffold(body: BoardView(key: key, state: s)))));
+          container: c,
+          child: MaterialApp(
+              home: Scaffold(body: BoardView(key: key, state: s)))));
       s = apply(const Roll('p0', 3, 4), s).state; // 36 → 3, passing Start
       await tester.pumpWidget(UncontrolledProviderScope(
-          container: c, child: MaterialApp(home: Scaffold(body: BoardView(key: key, state: s)))));
+          container: c,
+          child: MaterialApp(
+              home: Scaffold(body: BoardView(key: key, state: s)))));
       final seen = <int>[];
       var elapsed = Duration.zero;
-      while (key.currentState!.shown['p0'] != 3 && elapsed < const Duration(seconds: 3)) {
+      while (key.currentState!.shown['p0'] != 3 &&
+          elapsed < const Duration(seconds: 3)) {
         await tester.pump(const Duration(milliseconds: 16));
         elapsed += const Duration(milliseconds: 16);
         final now = key.currentState!.shown['p0']!;
@@ -89,8 +102,10 @@ void main() {
   });
 
   group('voice', () {
-    testWidgets('picking 2 players makes them exactly the recipients', (tester) async {
-      final c = await pumpWith(tester, const Scaffold(floatingActionButton: TalkButton()),
+    testWidgets('picking 2 players makes them exactly the recipients',
+        (tester) async {
+      final c = await pumpWith(
+          tester, const Scaffold(floatingActionButton: TalkButton()),
           view: GameView(state: started(n: 4), me: 'p0'));
       await tester.tap(find.byKey(const ValueKey('talk-button')));
       await tester.pumpAndSettle();
@@ -107,14 +122,20 @@ void main() {
       fakeAsync((fa) {
         final rec = FakeRecorder();
         final fake = FakeTransport(
-            reply: (m) =>
-                m is Hello ? [Welcome(playerId: 'p0', sessionToken: 't', state: started(n: 4))] : []);
+            reply: (m) => m is Hello
+                ? [
+                    Welcome(
+                        playerId: 'p0', sessionToken: 't', state: started(n: 4))
+                  ]
+                : []);
         final c = ProviderContainer(overrides: [
           clipRecorderProvider.overrideWithValue(rec),
           clipPlayerProvider.overrideWithValue(FakePlayer()),
         ]);
         withClock(Clock(() => DateTime(2026).add(fa.elapsed)), () {
-          c.read(gameProvider.notifier).playOffline(fake, name: 'A', token: Token.kite);
+          c
+              .read(gameProvider.notifier)
+              .playOffline(fake, name: 'A', token: Token.kite);
           fa.flushMicrotasks();
           final voice = c.read(voiceProvider.notifier);
           voice.setRecipients(['p1', 'p2']);
@@ -137,11 +158,15 @@ void main() {
     });
 
     VoiceFrame clip(String id, String from, {int ms = 500}) => VoiceFrame(
-        VoiceHeader(clipId: id, from: from, codec: 'opus-ogg', durationMs: ms), Uint8List(10));
+        VoiceHeader(clipId: id, from: from, codec: 'opus-ogg', durationMs: ms),
+        Uint8List(10));
 
-    test('clips arriving together play in order without overlap; muted are skipped', () async {
+    test(
+        'clips arriving together play in order without overlap; muted are skipped',
+        () async {
       final player = FakePlayer();
-      final c = ProviderContainer(overrides: [clipPlayerProvider.overrideWithValue(player)]);
+      final c = ProviderContainer(
+          overrides: [clipPlayerProvider.overrideWithValue(player)]);
       final voice = c.read(voiceProvider.notifier);
       voice.toggleMute('p9');
       voice.receive(clip('a', 'p1', ms: 60));
@@ -149,8 +174,10 @@ void main() {
       voice.receive(clip('b', 'p2', ms: 60));
       voice.receive(clip('c', 'p3', ms: 60));
       await Future<void>.delayed(const Duration(milliseconds: 400));
-      expect(player.timeline, ['start a', 'end a', 'start b', 'end b', 'start c', 'end c']);
-      expect(c.read(voiceProvider).recent.map((f) => f.header.clipId), ['a', 'b', 'c']);
+      expect(player.timeline,
+          ['start a', 'end a', 'start b', 'end b', 'start c', 'end c']);
+      expect(c.read(voiceProvider).recent.map((f) => f.header.clipId),
+          ['a', 'b', 'c']);
       // Replay a missed clip.
       voice.replay(c.read(voiceProvider).recent.first);
       await Future<void>.delayed(const Duration(milliseconds: 150));
@@ -159,18 +186,21 @@ void main() {
     });
 
     test('only the last 5 clips are kept for replay', () async {
-      final c = ProviderContainer(overrides: [clipPlayerProvider.overrideWithValue(FakePlayer())]);
+      final c = ProviderContainer(
+          overrides: [clipPlayerProvider.overrideWithValue(FakePlayer())]);
       final voice = c.read(voiceProvider.notifier);
       for (var i = 0; i < 8; i++) {
         voice.receive(clip('c$i', 'p1', ms: 1));
       }
-      expect(c.read(voiceProvider).recent.map((f) => f.header.clipId), ['c3', 'c4', 'c5', 'c6', 'c7']);
+      expect(c.read(voiceProvider).recent.map((f) => f.header.clipId),
+          ['c3', 'c4', 'c5', 'c6', 'c7']);
       await Future<void>.delayed(const Duration(milliseconds: 100));
       c.dispose();
     });
   });
 
-  test('a full offline game against bots plays to the end, then rematch', () async {
+  test('a full offline game against bots plays to the end, then rematch',
+      () async {
     final c = ProviderContainer();
     final game = c.read(gameProvider.notifier);
     final t = OfflineTransport(india(), botDelay: Duration.zero);
@@ -184,7 +214,8 @@ void main() {
     game.send(const SimpleIntent('start'));
     final me = MediumBot(SeededRandomSource(1));
     var guard = 0;
-    while (c.read(gameProvider).state!.phase != GamePhase.gameOver && guard++ < 20000) {
+    while (c.read(gameProvider).state!.phase != GamePhase.gameOver &&
+        guard++ < 20000) {
       final v = c.read(gameProvider);
       final s = v.state!;
       for (final a in me.candidates(s, v.me!)) {

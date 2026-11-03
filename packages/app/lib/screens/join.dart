@@ -173,7 +173,7 @@ class _JoinScreenState extends ConsumerState<JoinScreen> {
                 leading: const Icon(Icons.casino),
                 title: Text(g.name),
                 subtitle: Text(
-                    'Room ${g.code} · ${g.players}/${g.maxPlayers} players · ${g.ip}'),
+                    'Room ${g.code} · ${g.via.contains(Found.udp) ? '${g.players}/${g.maxPlayers} players' : 'found via Bonjour'} · ${g.ip}'),
                 trailing: g.hasPassword
                     ? const Icon(Icons.lock)
                     : const Icon(Icons.chevron_right),

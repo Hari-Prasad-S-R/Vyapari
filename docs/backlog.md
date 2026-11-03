@@ -62,14 +62,14 @@ Rules:
 | VY-26 | Trade screen | 3 | VY-25 | M | Done |
 | VY-27 | Activity log, emotes, results | 3 | VY-25 | S | Done |
 | VY-28 | Host a game from the phone | 4 | VY-27 | L | Built; needs device test |
-| VY-29 | Discover nearby games | 4 | VY-28 | M | Built (UDP; mDNS advert pending); needs device test |
+| VY-29 | Discover nearby games | 4 | VY-28 | M | Built (UDP + mDNS hybrid); needs device test |
 | VY-30 | Hotspot setup guidance | 4 | VY-28 | S | Done |
 | VY-31 | Record and send a clip | 5 | VY-28 | M | Built; needs device test |
 | VY-32 | Voice relay on the server | 5 | VY-15, VY-16 | M | Done |
 | VY-33 | Auto-play, mute and replay | 5 | VY-31, VY-32 | M | Built; playback needs device test |
 | VY-34 | Security and fair-dice proof | 6 | VY-30, VY-33 | M | Done |
 | VY-35 | Performance and device testing | 6 | VY-34 | M | Load test done; device/battery tests pending |
-| VY-36 | Internal release builds | 6 | VY-35 | S | Workflows + guide done; signing pending |
+| VY-36 | Internal release builds | 6 | VY-35 | S | Workflows, guide, Gradle signing done; keystore needed |
 | VY-37 | Split gateways and game nodes | 7 | VY-36 | XL | To do |
 | VY-38 | NATS voice bus | 7 | VY-37 | L | To do |
 | VY-39 | Accounts, stats and events | 7 | VY-37 | L | To do |

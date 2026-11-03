@@ -53,6 +53,8 @@ class GameState with JsonEquality {
     this.auction,
     List<Trade> trades = const [],
     List<Debt> debts = const [],
+    List<int> auctionQueue = const [],
+    this.resumePhase,
     this.rollAgain = false,
     List<int> lastDice = const [],
     this.turnNumber = 0,
@@ -66,6 +68,7 @@ class GameState with JsonEquality {
         log = List.unmodifiable(log),
         trades = List.unmodifiable(trades),
         debts = List.unmodifiable(debts),
+        auctionQueue = List.unmodifiable(auctionQueue),
         lastDice = List.unmodifiable(lastDice);
 
   /// Room code.
@@ -119,8 +122,14 @@ class GameState with JsonEquality {
   /// Pending trades.
   final List<Trade> trades;
 
-  /// Unpaid debts of the current player.
+  /// Unpaid debts, settled one debtor at a time in list order.
   final List<Debt> debts;
+
+  /// Tiles of a player bankrupt to the bank, waiting to be auctioned.
+  final List<int> auctionQueue;
+
+  /// Phase to return to when the bank's auctions finish.
+  final GamePhase? resumePhase;
 
   /// Whether the current player rolled doubles and must roll again.
   final bool rollAgain;
@@ -185,6 +194,8 @@ class GameState with JsonEquality {
     required this.auction,
     required this.trades,
     required this.debts,
+    required this.auctionQueue,
+    required this.resumePhase,
     required this.rollAgain,
     required this.lastDice,
     required this.turnNumber,
@@ -209,6 +220,8 @@ class GameState with JsonEquality {
     Object? auction = _unset,
     List<Trade>? trades,
     List<Debt>? debts,
+    List<int>? auctionQueue,
+    Object? resumePhase = _unset,
     bool? rollAgain,
     List<int>? lastDice,
     int? turnNumber,
@@ -239,6 +252,12 @@ class GameState with JsonEquality {
             identical(auction, _unset) ? this.auction : auction as Auction?,
         trades: trades == null ? this.trades : List.unmodifiable(trades),
         debts: debts == null ? this.debts : List.unmodifiable(debts),
+        auctionQueue: auctionQueue == null
+            ? this.auctionQueue
+            : List.unmodifiable(auctionQueue),
+        resumePhase: identical(resumePhase, _unset)
+            ? this.resumePhase
+            : resumePhase as GamePhase?,
         rollAgain: rollAgain ?? this.rollAgain,
         lastDice:
             lastDice == null ? this.lastDice : List.unmodifiable(lastDice),
@@ -269,6 +288,8 @@ class GameState with JsonEquality {
         'auction': auction?.toJson(),
         'trades': [for (final t in trades) t.toJson()],
         'debts': [for (final d in debts) d.toJson()],
+        'auctionQueue': auctionQueue,
+        'resumePhase': resumePhase?.name,
         'rollAgain': rollAgain,
         'lastDice': lastDice,
         'turnNumber': turnNumber,
@@ -300,6 +321,10 @@ class GameState with JsonEquality {
             : Auction.fromJson(readMap(json['auction'])),
         trades: readMapList(json['trades']).map(Trade.fromJson).toList(),
         debts: readMapList(json['debts']).map(Debt.fromJson).toList(),
+        auctionQueue: readIntList(json['auctionQueue']),
+        resumePhase: json['resumePhase'] == null
+            ? null
+            : GamePhase.values.byName(json['resumePhase'] as String),
         rollAgain: json['rollAgain'] as bool? ?? false,
         lastDice: readIntList(json['lastDice']),
         turnNumber: readIntOr(json, 'turnNumber', 0),

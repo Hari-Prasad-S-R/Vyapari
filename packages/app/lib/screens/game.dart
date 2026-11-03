@@ -37,7 +37,7 @@ List<(String, GameAction)> turnActions(GameState s, String me) {
   if (s.phase == GamePhase.awaitingBuy) {
     add(s.rules.auctions ? 'Auction' : 'Skip', DeclineBuy(me));
   }
-  add('Pay ${formatRupees(s.totalDebt)}', PayDebt(me));
+  add('Pay ${formatRupees(s.debtOf(me))}', PayDebt(me));
   add('Declare bankruptcy', DeclareBankruptcy(me));
   add('End turn', EndTurn(me));
   return out;
@@ -232,7 +232,7 @@ class ActionBar extends ConsumerWidget {
     final game = ref.read(gameProvider.notifier);
     final s = state;
     final buttons = <Widget>[];
-    if (s.currentPlayer == me) {
+    if (s.actingPlayer == me) {
       for (final (label, a) in turnActions(s, me)) {
         final primary = a is Roll || a is Buy || a is PayDebt;
         buttons.add(primary
@@ -261,12 +261,22 @@ class ActionBar extends ConsumerWidget {
       }
     }
     final error = ref.watch(gameProvider.select((g) => g.error));
-    if (s.phase == GamePhase.raiseCash && s.currentPlayer == me) {
+    if (s.phase == GamePhase.raiseCash && s.debts.isNotEmpty) {
+      final debtor = s.actingPlayer;
+      final creditor = s.debts.first.creditorId;
+      final to =
+          creditor == null ? 'the bank' : s.player(creditor)?.name ?? '?';
       buttons.insert(
           0,
           Text(
-              'You owe ${formatRupees(s.totalDebt)} — sell or mortgage in My cities',
-              style: TextStyle(color: Theme.of(context).colorScheme.error)));
+              debtor == me
+                  ? 'You owe ${formatRupees(s.debtOf(me))} to $to — sell or mortgage in My cities, then pay'
+                  : '${s.player(debtor)?.name ?? '?'} is raising ${formatRupees(s.debtOf(debtor))} to pay $to',
+              key: const ValueKey('raise-cash-banner'),
+              style: TextStyle(
+                  color: debtor == me
+                      ? Theme.of(context).colorScheme.error
+                      : Theme.of(context).colorScheme.onSurfaceVariant)));
     }
     return Material(
       elevation: 2,
@@ -555,18 +565,22 @@ class _PhoneTabs extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Consumer(builder: (context, ref, _) {
         GameView v() => ref.read(gameProvider);
-        Widget tab(String key, IconData icon, String label, Widget Function() child) =>
+        Widget tab(String key, IconData icon, String label,
+                Widget Function() child) =>
             Expanded(
               child: TextButton.icon(
                 key: ValueKey(key),
                 onPressed: () => _sheet(context, child),
                 icon: Icon(icon),
-                label: Text(label, overflow: TextOverflow.ellipsis, maxLines: 1),
+                label:
+                    Text(label, overflow: TextOverflow.ellipsis, maxLines: 1),
               ),
             );
         return Row(children: [
-          tab('tab-players', Icons.people, 'Players', () => PlayersPanel(view: v())),
-          tab('tab-cities', Icons.location_city, 'Cities', () => MyCities(view: v())),
+          tab('tab-players', Icons.people, 'Players',
+              () => PlayersPanel(view: v())),
+          tab('tab-cities', Icons.location_city, 'Cities',
+              () => MyCities(view: v())),
           tab('tab-log', Icons.list, 'Log', () => LogView(view: v())),
         ]);
       });

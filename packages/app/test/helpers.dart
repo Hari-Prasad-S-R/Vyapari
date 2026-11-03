@@ -22,10 +22,15 @@ BoardData india() => BoardData.parse(
 GameState started({int n = 3, HouseRules rules = const HouseRules()}) {
   var s = newLobby(roomId: '4821', board: india(), rules: rules);
   for (var i = 0; i < n; i++) {
-    s = apply(JoinGame('p$i', name: 'Player $i', token: Token.values[i % 6]), s).state;
+    s = apply(JoinGame('p$i', name: 'Player $i', token: Token.values[i % 6]), s)
+        .state;
     s = apply(SetReady('p$i', ready: true), s).state;
   }
-  return apply(StartGame('p0', seed: 1, openingRolls: {for (var i = 0; i < n; i++) 'p$i': 12 - i}), s)
+  return apply(
+          StartGame('p0',
+              seed: 1,
+              openingRolls: {for (var i = 0; i < n; i++) 'p$i': 12 - i}),
+          s)
       .state;
 }
 
@@ -33,7 +38,8 @@ GameState started({int n = 3, HouseRules rules = const HouseRules()}) {
 GameState lobbyState({int n = 3, int ready = 0}) {
   var s = newLobby(roomId: '4821', board: india());
   for (var i = 0; i < n; i++) {
-    s = apply(JoinGame('p$i', name: 'Player $i', token: Token.values[i % 6]), s).state;
+    s = apply(JoinGame('p$i', name: 'Player $i', token: Token.values[i % 6]), s)
+        .state;
     if (i > 0 && i <= ready) s = apply(SetReady('p$i', ready: true), s).state;
   }
   return s;
@@ -44,10 +50,13 @@ GameState withPlayer(GameState s, String id, Player Function(Player) f) =>
     s.copyWith(players: [for (final p in s.players) p.id == id ? f(p) : p]);
 
 /// Gives [id] the [tiles].
-GameState withOwned(GameState s, String id, List<int> tiles, {int houses = 0}) => s.copyWith(
+GameState withOwned(GameState s, String id, List<int> tiles,
+        {int houses = 0}) =>
+    s.copyWith(
       ownership: [
         ...s.ownership.where((o) => !tiles.contains(o.tileIndex)),
-        for (final t in tiles) Ownership(tileIndex: t, ownerId: id, houses: houses),
+        for (final t in tiles)
+          Ownership(tileIndex: t, ownerId: id, houses: houses),
       ],
     );
 

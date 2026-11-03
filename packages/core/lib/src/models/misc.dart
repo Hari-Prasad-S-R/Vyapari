@@ -279,7 +279,15 @@ class Auction with JsonEquality {
 /// Money a player owes but could not pay yet.
 class Debt with JsonEquality {
   /// Creates a debt.
-  const Debt({required this.amount, this.creditorId, this.toPot = false});
+  const Debt({
+    required this.debtorId,
+    required this.amount,
+    this.creditorId,
+    this.toPot = false,
+  });
+
+  /// Player who owes.
+  final String debtorId;
 
   /// Amount owed.
   final int amount;
@@ -292,6 +300,7 @@ class Debt with JsonEquality {
 
   @override
   Map<String, Object?> toJson() => {
+        'debtorId': debtorId,
         'amount': amount,
         if (creditorId != null) 'creditorId': creditorId,
         if (toPot) 'toPot': true,
@@ -299,6 +308,7 @@ class Debt with JsonEquality {
 
   /// Decodes a debt.
   factory Debt.fromJson(Map<String, Object?> json) => Debt(
+        debtorId: json['debtorId'] as String,
         amount: readInt(json, 'amount'),
         creditorId: json['creditorId'] as String?,
         toPot: json['toPot'] as bool? ?? false,

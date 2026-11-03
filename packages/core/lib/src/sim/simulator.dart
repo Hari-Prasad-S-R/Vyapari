@@ -8,6 +8,7 @@ import '../models/player.dart';
 import '../models/rules.dart';
 import '../rules/actions.dart';
 import '../rules/engine.dart';
+import '../rules/queries.dart';
 import '../rules/setup.dart';
 
 /// Outcome of one simulated game.
@@ -179,7 +180,8 @@ class Simulator {
             r = botAct(bots[t.to]!, s, t.to, roll);
             if (r != null) break;
           }
-          r ??= botAct(bots[s.currentPlayer]!, s, s.currentPlayer!, roll);
+          final actor = s.actingPlayer ?? s.currentPlayer!;
+          r ??= botAct(bots[actor]!, s, actor, roll);
         }
         if (r == null || !r.ok) {
           failure = 'stuck: no legal action in ${s.phase.name}';

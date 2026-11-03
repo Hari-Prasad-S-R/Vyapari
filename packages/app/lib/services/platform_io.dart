@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:bonsoir/bonsoir.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 import 'package:path_provider/path_provider.dart';
@@ -126,6 +127,27 @@ Future<LocalHostHandle> startLocalHost({
   try {
     await announcer.start();
   } catch (_) {}
+  // Also announce over mDNS/Bonjour: iPhones and some routers only see this.
+  BonsoirBroadcast? mdns;
+  try {
+    mdns = BonsoirBroadcast(
+      service: BonsoirService(
+        name: '$roomName ${room.code}',
+        type: mdnsServiceType,
+        port: port,
+        attributes: {
+          'code': room.code,
+          'name': roomName,
+          'max': '${room.state.config.maxPlayers}',
+          'pw': password != null && password.isNotEmpty ? '1' : '0',
+        },
+      ),
+    );
+    await mdns.initialize();
+    await mdns.start();
+  } catch (_) {
+    mdns = null; // UDP broadcast still works.
+  }
   await _startForegroundService();
   return LocalHostHandle(
     code: room.code,
@@ -133,42 +155,108 @@ Future<LocalHostHandle> startLocalHost({
     port: port,
     stop: () async {
       announcer.stop();
+      try {
+        await mdns?.stop();
+      } catch (_) {}
       await server.stop();
       await _stopForegroundService();
     },
   );
 }
 
-/// Games announced on the LAN, refreshed as they come and go.
+/// Games announced on the LAN over UDP broadcast and mDNS, merged and
+/// refreshed as they come and go.
 Stream<List<NearbyHost>> discoverNearby() {
   late StreamController<List<NearbyHost>> c;
   DiscoveryListener? listener;
-  StreamSubscription<List<NearbyGame>>? sub;
+  StreamSubscription<List<NearbyGame>>? udpSub;
+  BonsoirDiscovery? mdns;
+  StreamSubscription<BonsoirDiscoveryEvent>? mdnsSub;
+  var udp = <NearbyHost>[];
+  final viaMdns = <String, NearbyHost>{};
+  void emit() {
+    if (!c.isClosed) c.add(mergeNearby(udp, viaMdns.values.toList()));
+  }
+
   c = StreamController<List<NearbyHost>>(
     onListen: () async {
-      listener = DiscoveryListener();
+      var anyStarted = false;
       try {
+        listener = DiscoveryListener();
         await listener!.start();
-        sub = listener!.games.listen((games) => c.add([
-              for (final g in games)
-                NearbyHost(
-                  name: g.name,
-                  code: g.code,
-                  ip: g.ip,
-                  port: g.port,
-                  players: g.players,
-                  maxPlayers: g.maxPlayers,
-                  hasPassword: g.hasPassword,
-                ),
-            ]));
-      } catch (e) {
-        c.addError(e);
+        anyStarted = true;
+        udpSub = listener!.games.listen((games) {
+          udp = [
+            for (final g in games)
+              NearbyHost(
+                name: g.name,
+                code: g.code,
+                ip: g.ip,
+                port: g.port,
+                players: g.players,
+                maxPlayers: g.maxPlayers,
+                hasPassword: g.hasPassword,
+              ),
+          ];
+          emit();
+        });
+      } catch (_) {
+        // UDP port busy or blocked; rely on mDNS.
       }
+      try {
+        mdns = BonsoirDiscovery(type: mdnsServiceType);
+        await mdns!.initialize();
+        mdnsSub = mdns!.eventStream!.listen((event) {
+          switch (event) {
+            case BonsoirDiscoveryServiceFoundEvent():
+              event.service.resolve(mdns!.serviceResolver);
+            case BonsoirDiscoveryServiceResolvedEvent():
+              final host = _fromMdns(event.service);
+              if (host != null) {
+                viaMdns[event.service.name] = host;
+                emit();
+              }
+            case BonsoirDiscoveryServiceLostEvent():
+              if (viaMdns.remove(event.service.name) != null) emit();
+            default:
+              break;
+          }
+        });
+        await mdns!.start();
+        anyStarted = true;
+      } catch (_) {
+        // mDNS unavailable on this device; UDP may still work.
+      }
+      if (!anyStarted) c.addError('Nearby discovery is not available here');
     },
     onCancel: () async {
-      await sub?.cancel();
+      await udpSub?.cancel();
       await listener?.stop();
+      await mdnsSub?.cancel();
+      try {
+        await mdns?.stop();
+      } catch (_) {}
     },
   );
   return c.stream;
+}
+
+NearbyHost? _fromMdns(BonsoirService s) {
+  final code = s.attributes['code'];
+  // Prefer an IPv4 address: it is what hotspots and the QR link use.
+  final ip = s.hostAddresses.firstWhere(
+    (a) => InternetAddress.tryParse(a)?.type == InternetAddressType.IPv4,
+    orElse: () => s.hostAddresses.isEmpty ? '' : s.hostAddresses.first,
+  );
+  if (code == null || ip.isEmpty) return null;
+  return NearbyHost(
+    name: s.attributes['name'] ?? s.name,
+    code: code,
+    ip: ip,
+    port: s.port,
+    players: 0,
+    maxPlayers: int.tryParse(s.attributes['max'] ?? '') ?? 8,
+    hasPassword: s.attributes['pw'] == '1',
+    via: const {Found.mdns},
+  );
 }
