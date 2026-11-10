@@ -10,6 +10,8 @@ import '../services/transport.dart';
 import '../state/game_controller.dart';
 import '../state/profile.dart';
 import '../ui.dart';
+import '../widgets/board.dart' show BoardColors;
+import '../widgets/dice.dart';
 import 'help.dart';
 import 'join.dart';
 
@@ -45,6 +47,54 @@ class HomeScreen extends ConsumerStatefulWidget {
 class _HomeScreenState extends ConsumerState<HomeScreen> {
   final _name = TextEditingController();
   bool _busy = false;
+  LastSession? _last;
+
+  @override
+  void initState() {
+    super.initState();
+    loadLastSession().then((s) {
+      if (mounted) setState(() => _last = s);
+    });
+  }
+
+  /// Gets back into the last game: the host restarts its server from the
+  /// save; everyone else reconnects with their session token.
+  Future<void> _rejoin() async {
+    final last = _last;
+    if (last == null) return;
+    setState(() => _busy = true);
+    final game = ref.read(gameProvider.notifier);
+    var ok = false;
+    try {
+      if (last.hosting && canHost) {
+        final board = await ref.read(boardProvider.future);
+        final handle = await startLocalHost(
+            board: board,
+            roomName: "${last.name}'s game",
+            resumeCode: last.code);
+        ref.read(localHostProvider.notifier).set(handle);
+        ok = await game.connect(Uri.parse('ws://127.0.0.1:${handle.port}/ws'),
+            code: handle.code,
+            name: last.name,
+            token: last.token,
+            sessionToken: last.sessionToken,
+            hosting: true,
+            hostAddress: '${handle.ip ?? 'no network'}:${handle.port}');
+        if (!ok) await ref.read(localHostProvider.notifier).stop();
+      } else {
+        ok = await game.rejoin(last);
+      }
+    } catch (e) {
+      ok = false;
+    }
+    if (!mounted) return;
+    setState(() => _busy = false);
+    if (!ok) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text(
+              'Could not rejoin. Check you are on the same Wi-Fi/hotspot as the host, or the game may have ended.')));
+    }
+  }
 
   @override
   void dispose() {
@@ -140,16 +190,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    Text('Vyapari',
-                        textAlign: TextAlign.center,
-                        style: Theme.of(context)
-                            .textTheme
-                            .displayMedium
-                            ?.copyWith(
-                                color: saffron, fontWeight: FontWeight.w800)),
-                    const Text('Buy cities. Build. Trade. Win.',
-                        textAlign: TextAlign.center),
-                    const SizedBox(height: 24),
+                    const _Hero(),
+                    const SizedBox(height: 22),
                     TextField(
                       key: const ValueKey('name-field'),
                       controller: _name,
@@ -159,19 +201,24 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                       onChanged: (v) =>
                           ref.read(profileProvider.notifier).setName(v),
                     ),
-                    const Text('Token'),
-                    const SizedBox(height: 6),
-                    Wrap(spacing: 8, runSpacing: 8, children: [
-                      for (final t in Token.values)
-                        ChoiceChip(
-                          key: ValueKey('token-${t.name}'),
-                          materialTapTargetSize: MaterialTapTargetSize.padded,
-                          label: Text('${tokenEmoji(t)} ${tokenName(t)}'),
-                          selected: profile.token == t,
-                          onSelected: (_) =>
-                              ref.read(profileProvider.notifier).setToken(t),
-                        ),
-                    ]),
+                    Text('Your token: ${tokenName(profile.token)}',
+                        style: Theme.of(context).textTheme.labelLarge),
+                    const SizedBox(height: 8),
+                    Wrap(
+                        alignment: WrapAlignment.center,
+                        spacing: 10,
+                        runSpacing: 10,
+                        children: [
+                          for (final t in Token.values)
+                            _TokenPick(
+                              key: ValueKey('token-${t.name}'),
+                              token: t,
+                              selected: profile.token == t,
+                              onTap: () => ref
+                                  .read(profileProvider.notifier)
+                                  .setToken(t),
+                            ),
+                        ]),
                     const SizedBox(height: 24),
                     if (canHost)
                       FilledButton.icon(
@@ -214,6 +261,27 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                       icon: const Icon(Icons.smart_toy),
                       label: const Text('Play vs bots'),
                     ),
+                    if (_last != null) ...[
+                      const SizedBox(height: 18),
+                      FilledButton.icon(
+                        key: const ValueKey('rejoin'),
+                        style: FilledButton.styleFrom(
+                            backgroundColor: saffron,
+                            foregroundColor: const Color(0xFF2B1D00)),
+                        onPressed: _busy ? null : _rejoin,
+                        icon: const Icon(Icons.replay),
+                        label: Text(_last!.hosting
+                            ? 'Resume hosting room ${_last!.code}'
+                            : 'Rejoin game (room ${_last!.code})'),
+                      ),
+                      TextButton(
+                        onPressed: () async {
+                          await saveLastSession(null);
+                          if (mounted) setState(() => _last = null);
+                        },
+                        child: const Text('Forget that game'),
+                      ),
+                    ],
                     if (error != null) ...[
                       const SizedBox(height: 12),
                       Text(error,
@@ -386,4 +454,90 @@ class _Step extends StatelessWidget {
         leading: CircleAvatar(child: Text('$n')),
         title: Text(text),
       );
+}
+
+/// Felt-green header with the logo and a pair of dice.
+class _Hero extends StatelessWidget {
+  const _Hero();
+
+  @override
+  Widget build(BuildContext context) => Container(
+        padding: const EdgeInsets.symmetric(vertical: 22, horizontal: 16),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(22),
+          gradient: const RadialGradient(
+              colors: [BoardColors.feltLight, BoardColors.feltDark],
+              radius: 1.1),
+          border: Border.all(
+              color: BoardColors.gold.withValues(alpha: 0.6), width: 2),
+          boxShadow: const [
+            BoxShadow(
+                blurRadius: 16, color: Colors.black38, offset: Offset(0, 6))
+          ],
+        ),
+        child: const Column(children: [
+          Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+            Die(face: 5, size: 34),
+            SizedBox(width: 10),
+            Die(face: 3, size: 34),
+          ]),
+          SizedBox(height: 10),
+          Text('VYAPARI',
+              style: TextStyle(
+                  color: BoardColors.gold,
+                  fontSize: 40,
+                  fontWeight: FontWeight.w900,
+                  letterSpacing: 4,
+                  shadows: [
+                    Shadow(
+                        blurRadius: 8,
+                        color: Colors.black54,
+                        offset: Offset(0, 2))
+                  ])),
+          SizedBox(height: 4),
+          Text('Buy cities · Build · Trade · Win',
+              style: TextStyle(
+                  color: Colors.white70, fontWeight: FontWeight.w600)),
+        ]),
+      );
+}
+
+/// Round token button.
+class _TokenPick extends StatelessWidget {
+  const _TokenPick(
+      {super.key,
+      required this.token,
+      required this.selected,
+      required this.onTap});
+  final Token token;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Tooltip(
+      message: tokenName(token),
+      child: InkWell(
+        customBorder: const CircleBorder(),
+        onTap: onTap,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 180),
+          width: 56,
+          height: 56,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: selected
+                ? saffron.withValues(alpha: 0.25)
+                : scheme.surfaceContainerHigh,
+            border: Border.all(
+                color: selected ? saffron : scheme.outlineVariant,
+                width: selected ? 3 : 1),
+          ),
+          child: Text(tokenEmoji(token), style: const TextStyle(fontSize: 26)),
+        ),
+      ),
+    );
+  }
 }

@@ -72,32 +72,112 @@ void main() {
       }
     }, tags: ['golden']);
 
-    testWidgets('a 7-tile move passing Start steps through each tile in < 2 s',
-        (tester) async {
-      var s = withPlayer(started(), 'p0', (p) => p.copyWith(position: 36));
-      final c = await pumpWith(tester, Scaffold(body: BoardView(state: s)),
+    /// Pumps a board for [s] whose feed holds the events of [steps].
+    Future<GlobalKey<BoardViewState>> boardWith(
+        WidgetTester tester, GameState s) async {
+      final c = await pumpWith(tester, const SizedBox(),
           view: GameView(state: s, me: 'p0'));
       final key = GlobalKey<BoardViewState>();
       await tester.pumpWidget(UncontrolledProviderScope(
           container: c,
           child: MaterialApp(
               home: Scaffold(body: BoardView(key: key, state: s)))));
-      s = apply(const Roll('p0', 3, 4), s).state; // 36 → 3, passing Start
+      addTearDown(() => tester.pumpWidget(const SizedBox()));
+      return key;
+    }
+
+    Future<void> feedTo(WidgetTester tester, GlobalKey<BoardViewState> key,
+        GameState s, List<(int, GameEvent)> feed) async {
       await tester.pumpWidget(UncontrolledProviderScope(
-          container: c,
+          container: ProviderContainer(),
           child: MaterialApp(
-              home: Scaffold(body: BoardView(key: key, state: s)))));
-      final seen = <int>[];
-      var elapsed = Duration.zero;
-      while (key.currentState!.shown['p0'] != 3 &&
-          elapsed < const Duration(seconds: 3)) {
-        await tester.pump(const Duration(milliseconds: 16));
-        elapsed += const Duration(milliseconds: 16);
-        final now = key.currentState!.shown['p0']!;
-        if (seen.isEmpty || seen.last != now) seen.add(now);
+              home: Scaffold(
+                  body: BoardView(
+                      key: key,
+                      state: s,
+                      feed: feed,
+                      hop: const Duration(milliseconds: 200))))));
+    }
+
+    /// Positions p0 is shown at, sampled until the replay finishes.
+    Future<List<int>> track(
+        WidgetTester tester, GlobalKey<BoardViewState> key, String id) async {
+      final seen = <int>[key.currentState!.shown[id]!];
+      for (var t = 0; t < 600 && (key.currentState?.busy ?? false); t++) {
+        await tester.pump(const Duration(milliseconds: 20));
+        final now = key.currentState!.shown[id]!;
+        if (seen.last != now) seen.add(now);
+        // Tap away card pop-ups as a player would.
       }
+      return seen;
+    }
+
+    testWidgets(
+        'a 7-tile move passing Start hops through each tile, one per hop',
+        (tester) async {
+      final s0 = withPlayer(started(), 'p0', (p) => p.copyWith(position: 36));
+      final key = await boardWith(tester, s0);
+      final r = apply(const Roll('p0', 3, 4), s0); // 36 → 3, passing Start
+      var seq = 0;
+      await feedTo(
+          tester, key, r.state, [for (final e in r.events) (++seq, e)]);
+      final sw = Duration.zero;
+      final seen = await track(tester, key, 'p0');
       expect(seen, [36, 37, 38, 39, 0, 1, 2, 3]);
-      expect(elapsed, lessThan(const Duration(seconds: 2)));
+      expect(sw, Duration.zero);
+      expect(key.currentState!.busy, isFalse);
+    });
+
+    testWidgets(
+        'a card move is shown after the dice move, never as one long jump',
+        (tester) async {
+      // p0 on 39 rolls 1+2 → Undiyal (2), draws "Advance to Start" → 0.
+      var s0 = withPlayer(started(), 'p0', (p) => p.copyWith(position: 39));
+      s0 = s0.copyWith(
+          decks: Decks(
+              vaaippu: s0.decks.vaaippu,
+              undiyal: ['u01', ...s0.decks.undiyal.where((c) => c != 'u01')]));
+      final key = await boardWith(tester, s0);
+      final r = apply(const Roll('p0', 1, 2), s0);
+      expect(r.state.player('p0')!.position, 0);
+      var seq = 0;
+      await feedTo(
+          tester, key, r.state, [for (final e in r.events) (++seq, e)]);
+      final seen = <int>[39];
+      var sawCard = false;
+      for (var t = 0; t < 800 && key.currentState!.busy; t++) {
+        await tester.pump(const Duration(milliseconds: 20));
+        if (find.byKey(const ValueKey('card-popup')).evaluate().isNotEmpty) {
+          sawCard = true;
+          expect(find.textContaining('Advance to Start'), findsOneWidget);
+          expect(seen.last, 2,
+              reason: 'card shows once the token reached Undiyal');
+        }
+        final now = key.currentState!.shown['p0']!;
+        if (seen.last != now) seen.add(now);
+      }
+      expect(sawCard, isTrue);
+      // Dice move 39 → 0 → 1 → 2, card, then the card's move 2 → … → 0.
+      expect(seen.sublist(0, 4), [39, 0, 1, 2]);
+      expect(seen.last, 0);
+      expect(seen.length, 4 + 38,
+          reason: 'the card move hops every tile to Start');
+    });
+
+    testWidgets('go back 3 hops backwards; jail jumps straight there',
+        (tester) async {
+      var s0 = withPlayer(started(), 'p0', (p) => p.copyWith(position: 4));
+      s0 = s0.copyWith(
+          decks: Decks(
+              vaaippu: ['v09', ...s0.decks.vaaippu.where((c) => c != 'v09')],
+              undiyal: s0.decks.undiyal));
+      final key = await boardWith(tester, s0);
+      final r = apply(const Roll('p0', 1, 2), s0); // → 7 Vaaippu, back 3 → 4
+      var seq = 0;
+      await feedTo(
+          tester, key, r.state, [for (final e in r.events) (++seq, e)]);
+      final seen = await track(tester, key, 'p0');
+      expect(seen, [4, 5, 6, 7, 6, 5, 4]);
     });
   });
 
@@ -203,7 +283,7 @@ void main() {
       () async {
     final c = ProviderContainer();
     final game = c.read(gameProvider.notifier);
-    final t = OfflineTransport(india(), botDelay: Duration.zero);
+    final t = OfflineTransport(india(), botDelay: Duration.zero, pace: false);
     await game.playOffline(t, name: 'Me', token: Token.kite);
     game.send(const SetRulesMsg(HouseRules(maxTurns: 40, auctions: false)));
     for (var i = 0; i < 3; i++) {

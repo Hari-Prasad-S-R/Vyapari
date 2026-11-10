@@ -130,11 +130,12 @@ class _MemoryPeer implements Peer {
 class OfflineTransport implements GameTransport {
   /// Creates an offline room for [board].
   OfflineTransport(BoardData board,
-      {Duration botDelay = const Duration(milliseconds: 650)})
+      {Duration botDelay = const Duration(milliseconds: 650), bool pace = true})
       : room = Room(
           code: 'SOLO',
           board: board,
-          config: ServerConfig(botDelay: botDelay, enableTurnTimer: false),
+          config: ServerConfig(
+              botDelay: botDelay, enableTurnTimer: false, paceAnimations: pace),
           rng: SecureRandomSource(),
           isLocal: false,
         ) {

@@ -21,6 +21,7 @@ BoardData india() {
 
 /// Fast settings for tests.
 const testConfig = ServerConfig(
+  paceAnimations: false,
   botDelay: Duration.zero,
   auctionTime: Duration(milliseconds: 150),
   tradeReviewDelay: Duration.zero,

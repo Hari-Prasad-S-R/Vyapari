@@ -94,6 +94,9 @@ class FakeTransport implements GameTransport {
 
   @override
   Future<void> close() async {}
+
+  /// Simulates the network dropping the connection.
+  void drop() => _c.add(const IncomingClosed());
 }
 
 /// Recorder that returns fixed bytes.
@@ -172,5 +175,13 @@ void expectTouchTargets(WidgetTester tester) {
       expect(box.size.height, greaterThanOrEqualTo(44), reason: '${e.widget}');
       expect(box.size.width, greaterThanOrEqualTo(44), reason: '${e.widget}');
     }
+  }
+}
+
+/// Lets a bottom sheet finish opening. `pumpAndSettle` never settles while
+/// the dice pulse, so step frames for a fixed time instead.
+Future<void> settleSheet(WidgetTester tester) async {
+  for (var i = 0; i < 30; i++) {
+    await tester.pump(const Duration(milliseconds: 50));
   }
 }

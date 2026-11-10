@@ -513,6 +513,8 @@ class Room {
   void _commit(ApplyResult r) {
     final prev = state;
     state = r.state;
+    _pendingAnimation =
+        config.paceAnimations ? animationTime(r.events) : Duration.zero;
     broadcast(PatchMsg.diff(prev, state, r.events));
     if (prev.phase == GamePhase.lobby && state.phase != GamePhase.lobby) {
       _broadcastCommit();
@@ -644,8 +646,13 @@ class Room {
     if (state.phase == GamePhase.lobby || state.phase == GamePhase.gameOver) {
       return;
     }
-    _botTimer = Timer(immediate ? Duration.zero : config.botDelay, _botStep);
+    _botTimer = Timer(
+        immediate ? Duration.zero : config.botDelay + _pendingAnimation,
+        _botStep);
   }
+
+  /// Animation time of the last change, waited before the next bot move.
+  Duration _pendingAnimation = Duration.zero;
 
   /// One bot step: returns whether an action was applied.
   bool _botStep() {

@@ -1,7 +1,10 @@
 import 'dart:async';
+import 'dart:convert';
+import 'dart:math';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:vyapari_core/vyapari_core.dart';
 import 'package:vyapari_protocol/vyapari_protocol.dart';
 
@@ -43,7 +46,13 @@ class GameView {
     this.popups = const [],
     this.lastEvents = const [],
     this.chat = const [],
+    this.feed = const [],
   });
+
+  /// Every game event received, in order, each with a rising sequence
+  /// number (last 200). The board replays these one by one so moves,
+  /// cards and payments are shown exactly as they happened.
+  final List<(int, GameEvent)> feed;
 
   /// Recent chat messages, oldest first (memory only, last 50).
   final List<ChatBroadcast> chat;
@@ -125,6 +134,7 @@ class GameView {
     List<Popup>? popups,
     List<GameEvent>? lastEvents,
     List<ChatBroadcast>? chat,
+    List<(int, GameEvent)>? feed,
   }) =>
       GameView(
         status: status ?? this.status,
@@ -144,6 +154,7 @@ class GameView {
         popups: popups ?? this.popups,
         lastEvents: lastEvents ?? this.lastEvents,
         chat: chat ?? this.chat,
+        feed: feed ?? this.feed,
       );
 }
 
@@ -193,7 +204,17 @@ class GameController extends Notifier<GameView> {
   Hello? _hello;
   bool _leaving = false;
   int _retries = 0;
+  int _feedSeq = 0;
+  DateTime? _reconnectSince;
+  DateTime _lastHeard = DateTime.now();
+  Timer? _watchdog;
   final Map<int, DiceCommit> _commits = {};
+
+  /// How long to keep trying to win the seat back (the server holds it 3 min).
+  static const rejoinWindow = Duration(minutes: 3);
+
+  /// A connection silent this long is treated as dead and reopened.
+  static const silenceLimit = Duration(seconds: 20);
 
   /// Voice frames for the audio service.
   final voiceFrames = StreamController<VoiceFrame>.broadcast();
@@ -202,6 +223,7 @@ class GameController extends Notifier<GameView> {
   GameView build() {
     ref.onDispose(() {
       _ping?.cancel();
+      _watchdog?.cancel();
       _sub?.cancel();
       _t?.close();
     });
@@ -218,12 +240,19 @@ class GameController extends Notifier<GameView> {
     String? password,
     bool hosting = false,
     String? hostAddress,
+    String? sessionToken,
   }) async {
     await _close();
     _leaving = false;
     _uri = uri;
-    _hello =
-        Hello(name: name, token: token, create: create, password: password);
+    _retries = 0;
+    _reconnectSince = null;
+    _hello = Hello(
+        name: name,
+        token: token,
+        create: create,
+        password: password,
+        sessionToken: sessionToken);
     state = GameView(
         status: ConnStatus.connecting,
         roomCode: code,
@@ -263,6 +292,8 @@ class GameController extends Notifier<GameView> {
     _t = t;
     final welcomed = Completer<bool>();
     _sub = t.incoming.listen((e) {
+      if (!identical(_t, t)) return; // a replaced connection
+      _lastHeard = DateTime.now();
       switch (e) {
         case IncomingMessage(:final message):
           if (message is Welcome && !welcomed.isCompleted) {
@@ -281,9 +312,22 @@ class GameController extends Notifier<GameView> {
       }
     });
     t.send(hello, room: code);
+    _lastHeard = DateTime.now();
     _ping?.cancel();
-    _ping = Timer.periodic(const Duration(seconds: 10),
+    _ping = Timer.periodic(const Duration(seconds: 5),
         (_) => _t?.send(const SimpleIntent('ping')));
+    _watchdog?.cancel();
+    if (!state.offline) {
+      _watchdog = Timer.periodic(const Duration(seconds: 5), (_) {
+        // Half-open sockets (Wi-Fi blips, phone sleep) never report closing;
+        // if the server has gone quiet, reopen the connection ourselves.
+        if (identical(_t, t) &&
+            state.status == ConnStatus.connected &&
+            DateTime.now().difference(_lastHeard) > silenceLimit) {
+          forceReconnect();
+        }
+      });
+    }
     return welcomed.future
         .timeout(const Duration(seconds: 8), onTimeout: () => false);
   }
@@ -292,13 +336,17 @@ class GameController extends Notifier<GameView> {
     switch (m) {
       case Welcome():
         _retries = 0;
+        _reconnectSince = null;
         state = state.copyWith(
           status: ConnStatus.connected,
           me: m.playerId,
           sessionToken: m.sessionToken,
           state: m.state,
+          // A created room gets its code from the server.
+          roomCode: m.state.roomId,
           clearError: true,
         );
+        _rememberSession();
       case StateMsg():
         state = state.copyWith(state: m.state);
       case PatchMsg():
@@ -348,27 +396,15 @@ class GameController extends Notifier<GameView> {
       _t?.send(SyncMsg(s.version));
       return;
     }
-    final now = DateTime.now().millisecondsSinceEpoch;
-    final popups = [
-      ...state.popups.where((x) => now - x.at < 4000),
-      for (final e in p.events)
-        if (const {
-          'rent',
-          'tax',
-          'card',
-          'bought',
-          'auction_won',
-          'pot',
-          'salary',
-          'bankrupt',
-          'jailed'
-        }.contains(e.type))
-          Popup(e.text, now),
+    final feed = [
+      ...state.feed,
+      for (final e in p.events) (++_feedSeq, e),
     ];
     state = state.copyWith(
         state: next,
         lastEvents: p.events,
-        popups: popups.length > 4 ? popups.sublist(popups.length - 4) : popups);
+        feed: feed.length > 200 ? feed.sublist(feed.length - 200) : feed);
+    if (next.phase == GamePhase.gameOver) forgetSession();
   }
 
   void _onClosed() {
@@ -377,18 +413,28 @@ class GameController extends Notifier<GameView> {
     final token = state.sessionToken;
     final uri = _uri;
     final hello = _hello;
-    if (token == null || uri == null || hello == null || _retries > 30) {
-      state = state.copyWith(status: ConnStatus.closed, error: 'Disconnected');
+    final since = _reconnectSince ??= DateTime.now();
+    if (token == null ||
+        uri == null ||
+        hello == null ||
+        DateTime.now().difference(since) > rejoinWindow) {
+      state = state.copyWith(
+          status: ConnStatus.closed,
+          error: 'Lost the connection. Tap Rejoin on the home screen.');
       return;
     }
     state = state.copyWith(status: ConnStatus.reconnecting);
-    final delay = Duration(seconds: _retries < 3 ? 1 : 5);
+    // 0.5 s, 1 s, 2 s, then every 3 s.
+    final delay = Duration(milliseconds: min(3000, 500 << min(_retries, 3)));
     _retries++;
     Timer(delay, () async {
-      if (_leaving) return;
+      if (_leaving || state.status == ConnStatus.connected) return;
       try {
         final t = await ref.read(transportFactoryProvider)(uri);
         await _sub?.cancel();
+        final old = _t;
+        _t = null;
+        unawaited(old?.close());
         await _attach(
             t,
             state.roomCode,
@@ -402,6 +448,57 @@ class GameController extends Notifier<GameView> {
       }
     });
   }
+
+  /// Drops the current socket and reconnects with the session token
+  /// (watchdog, app resumed, or the player tapped Reconnect).
+  void forceReconnect() {
+    if (_leaving || state.offline || state.sessionToken == null) return;
+    final old = _t;
+    _t = null;
+    _sub?.cancel();
+    unawaited(old?.close());
+    _onClosed();
+  }
+
+  /// Called when the app returns to the foreground: check the line at once.
+  void onResumed() {
+    if (state.offline || state.me == null) return;
+    if (state.status == ConnStatus.connected &&
+        DateTime.now().difference(_lastHeard) < const Duration(seconds: 6)) {
+      _t?.send(SyncMsg(state.state?.version ?? 0));
+    } else {
+      _retries = 0;
+      forceReconnect();
+    }
+  }
+
+  /// Rejoins a saved game (app restarted, phone rebooted, …).
+  Future<bool> rejoin(LastSession s) => connect(
+        Uri.parse(s.url),
+        code: s.code,
+        name: s.name,
+        token: s.token,
+        sessionToken: s.sessionToken,
+        hosting: s.hosting,
+      );
+
+  Future<void> _rememberSession() async {
+    final uri = _uri;
+    final hello = _hello;
+    final token = state.sessionToken;
+    if (uri == null || hello == null || token == null || state.offline) return;
+    await saveLastSession(LastSession(
+      url: uri.toString(),
+      code: state.roomCode,
+      name: hello.name,
+      token: hello.token,
+      sessionToken: token,
+      hosting: state.hosting,
+    ));
+  }
+
+  /// Forgets the saved game (left on purpose or finished).
+  Future<void> forgetSession() => saveLastSession(null);
 
   /// Sends an intent to the server.
   void send(ClientMessage m) {
@@ -428,6 +525,7 @@ class GameController extends Notifier<GameView> {
   /// Leaves the game and closes the connection.
   Future<void> leave() async {
     _leaving = true;
+    unawaited(forgetSession());
     _t?.send(const SimpleIntent('leave'));
     await _close();
     state = const GameView();
@@ -435,10 +533,92 @@ class GameController extends Notifier<GameView> {
 
   Future<void> _close() async {
     _ping?.cancel();
+    _watchdog?.cancel();
     await _sub?.cancel();
     _sub = null;
     final t = _t;
     _t = null;
     await t?.close();
   }
+}
+
+/// A game this device can rejoin with its session token.
+class LastSession {
+  /// Creates a record.
+  const LastSession({
+    required this.url,
+    required this.code,
+    required this.name,
+    required this.token,
+    required this.sessionToken,
+    this.hosting = false,
+  });
+
+  /// Server WebSocket URL.
+  final String url;
+
+  /// Room code.
+  final String code;
+
+  /// Nickname.
+  final String name;
+
+  /// Token.
+  final Token token;
+
+  /// Seat token.
+  final String sessionToken;
+
+  /// Whether this device hosted (the host must start its server again).
+  final bool hosting;
+
+  /// JSON form.
+  Map<String, Object?> toJson() => {
+        'url': url,
+        'code': code,
+        'name': name,
+        'token': token.name,
+        'sessionToken': sessionToken,
+        'hosting': hosting,
+      };
+
+  /// Decodes a record.
+  static LastSession? fromJson(Object? raw) {
+    if (raw is! Map) return null;
+    try {
+      return LastSession(
+        url: raw['url'] as String,
+        code: raw['code'] as String,
+        name: raw['name'] as String,
+        token: Token.values.byName(raw['token'] as String),
+        sessionToken: raw['sessionToken'] as String,
+        hosting: raw['hosting'] as bool? ?? false,
+      );
+    } catch (_) {
+      return null;
+    }
+  }
+}
+
+/// Loads the saved game, if any.
+Future<LastSession?> loadLastSession() async {
+  try {
+    final p = await SharedPreferences.getInstance();
+    final raw = p.getString('last_session');
+    return raw == null ? null : LastSession.fromJson(jsonDecode(raw));
+  } catch (_) {
+    return null;
+  }
+}
+
+/// Saves (or with `null` clears) the game to rejoin.
+Future<void> saveLastSession(LastSession? s) async {
+  try {
+    final p = await SharedPreferences.getInstance();
+    if (s == null) {
+      await p.remove('last_session');
+    } else {
+      await p.setString('last_session', jsonEncode(s.toJson()));
+    }
+  } catch (_) {}
 }

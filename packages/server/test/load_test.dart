@@ -21,6 +21,7 @@ void main() {
     final server = GameServer(
       board: india(),
       config: const ServerConfig(
+        paceAnimations: false,
         online: true,
         botDelay: Duration.zero,
         auctionTime: Duration(milliseconds: 100),

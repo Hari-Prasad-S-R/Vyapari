@@ -21,14 +21,19 @@ void main() {
     final c = await pumpWith(tester, const GameScreen(),
         view: GameView(state: s, me: 'p0'),
         size: const Size(800, 1000),
-        overrides: [chatOnlyProvider.overrideWithValue(true)]);
-    await tester.runAsync(() => c
-        .read(gameProvider.notifier)
-        .playOffline(fake, name: 'A', token: Token.kite));
+        overrides: [
+          chatOnlyProvider.overrideWithValue(true),
+          transportFactoryProvider.overrideWithValue((_) async => fake),
+        ]);
+    await tester.runAsync(() => c.read(gameProvider.notifier).connect(
+        Uri.parse('ws://test/ws'),
+        code: '4821',
+        name: 'A',
+        token: Token.kite));
     await tester.pump();
     expect(find.byKey(const ValueKey('talk-button')), findsNothing);
     await tester.tap(find.byKey(const ValueKey('chat-button')));
-    await tester.pumpAndSettle();
+    await settleSheet(tester); // dice keep pulsing, so step frames
     c.read(voiceProvider.notifier).setRecipients(['p2']);
     await tester.pump();
     expect(find.text('To: Player 2'), findsOneWidget);
@@ -80,13 +85,19 @@ void main() {
             ? [Welcome(playerId: 'p1', sessionToken: 't', state: s)]
             : []);
     final c = await pumpWith(tester, const GameScreen(),
-        view: GameView(state: s, me: 'p1'), size: const Size(800, 1000));
-    await tester.runAsync(() => c
-        .read(gameProvider.notifier)
-        .playOffline(fake, name: 'B', token: Token.kite));
+        view: GameView(state: s, me: 'p1'),
+        size: const Size(800, 1000),
+        overrides: [
+          transportFactoryProvider.overrideWithValue((_) async => fake)
+        ]);
+    await tester.runAsync(() => c.read(gameProvider.notifier).connect(
+        Uri.parse('ws://test/ws'),
+        code: '4821',
+        name: 'B',
+        token: Token.kite));
     await tester.pump();
     await tester.tap(find.byKey(const ValueKey('chat-button')));
-    await tester.pumpAndSettle();
+    await settleSheet(tester);
     await tester.enterText(
         find.byKey(const ValueKey('chat-field')).last, 'Ok, deal!');
     await tester.tap(find.byKey(const ValueKey('chat-send')).last);

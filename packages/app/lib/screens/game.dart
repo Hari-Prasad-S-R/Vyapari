@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math';
 
 import 'package:flutter/material.dart';
@@ -17,7 +18,36 @@ import 'trade.dart';
 bool legal(GameState s, GameAction a) =>
     apply(a is Roll && !a.hasDice ? Roll(a.playerId, 1, 2) : a, s).ok;
 
-/// Turn actions legal for [me] right now, in display order.
+/// Whether [me] may roll now (tap the dice).
+bool canRollNow(GameState s, String me) =>
+    s.actingPlayer == me && legal(s, Roll.intent(me));
+
+/// Hint under the dice when [me] can roll.
+String rollHint(GameState s, String me) {
+  final p = s.player(me);
+  if (p != null && p.inJail) return 'Tap the dice to try for doubles';
+  if (s.phase == GamePhase.manage && s.rollAgain) {
+    return 'Doubles! Tap to roll again';
+  }
+  return 'Your turn: tap the dice';
+}
+
+/// True while the board is still replaying moves; turn buttons wait.
+final boardBusyProvider = NotifierProvider<BoardBusy, bool>(BoardBusy.new);
+
+/// Holds [boardBusyProvider].
+class BoardBusy extends Notifier<bool> {
+  @override
+  bool build() => false;
+
+  /// Updates the flag.
+  void set(bool v) {
+    if (state != v) state = v;
+  }
+}
+
+/// Turn actions legal for [me] right now, in display order (rolling is
+/// done by tapping the dice).
 List<(String, GameAction)> turnActions(GameState s, String me) {
   final p = s.player(me);
   if (p == null || p.bankrupt) return const [];
@@ -30,9 +60,6 @@ List<(String, GameAction)> turnActions(GameState s, String me) {
   if (s.phase == GamePhase.awaitingRoll && p.inJail) {
     add('Pay ${formatRupees(s.config.jailFine)}', PayJailFine(me));
     add('Use card', UseJailCard(me));
-    add('Roll for doubles', Roll.intent(me));
-  } else {
-    add(s.phase == GamePhase.manage ? 'Roll again' : 'Roll', Roll.intent(me));
   }
   add('Buy ${tile.name} ${formatRupees(tile.price)}', Buy(me));
   if (s.phase == GamePhase.awaitingBuy) {
@@ -56,10 +83,21 @@ class GameScreen extends ConsumerWidget {
     final me = view.me!;
     final width = MediaQuery.sizeOf(context).width;
     final size = sizeClassOf(width);
+    final auc = s.auction;
     final board = BoardView(
       state: s,
+      feed: view.feed,
       emotes: view.emotes,
-      center: _BoardCentre(view: view),
+      canRoll: canRollNow(s, me),
+      onRoll: () => ref.read(gameProvider.notifier).act(Roll.intent(me)),
+      rollHint: rollHint(s, me),
+      onBusy: (b) => ref.read(boardBusyProvider.notifier).set(b),
+      centreExtra: auc == null
+          ? null
+          : _AuctionInfo(
+              key: const ValueKey('auction-info'),
+              text: 'Auction: ${s.tiles[auc.tileIndex].name}\n'
+                  '${auc.highBidder == null ? 'No bids yet' : 'High bid ${formatRupees(auc.highBid)} by ${s.player(auc.highBidder)?.name}'}'),
     );
     final actionBar = ActionBar(state: s, me: me);
     final incoming = s.trades.where((t) => t.to == me).toList();
@@ -131,7 +169,9 @@ class GameScreen extends ConsumerWidget {
               right: 8,
               child: Center(child: _OfferBanner(trade: incoming.first)),
             ),
-          if (view.paused || view.status == ConnStatus.reconnecting)
+          if (view.paused ||
+              view.status == ConnStatus.reconnecting ||
+              view.status == ConnStatus.closed)
             Positioned.fill(
               child: ColoredBox(
                 color: Colors.black54,
@@ -140,12 +180,33 @@ class GameScreen extends ConsumerWidget {
                     child: Padding(
                       padding: const EdgeInsets.all(20),
                       child: Column(mainAxisSize: MainAxisSize.min, children: [
-                        const CircularProgressIndicator(),
+                        if (view.status != ConnStatus.closed)
+                          const CircularProgressIndicator()
+                        else
+                          const Icon(Icons.wifi_off, size: 40),
                         const SizedBox(height: 12),
-                        Text(view.status == ConnStatus.reconnecting
-                            ? 'Reconnecting…'
-                            : (view.notice ?? 'Game paused')),
+                        Text(
+                          switch (view.status) {
+                            ConnStatus.reconnecting =>
+                              'Connection lost. Reconnecting…\nYour seat is kept for 3 minutes.',
+                            ConnStatus.closed => view.error ?? 'Disconnected',
+                            _ => view.notice ?? 'Game paused',
+                          },
+                          key: const ValueKey('connection-overlay'),
+                          textAlign: TextAlign.center,
+                        ),
                         const SizedBox(height: 12),
+                        if (view.status != ConnStatus.connected &&
+                            !view.offline)
+                          FilledButton.icon(
+                            key: const ValueKey('reconnect-now'),
+                            onPressed: () => ref
+                                .read(gameProvider.notifier)
+                                .forceReconnect(),
+                            icon: const Icon(Icons.refresh),
+                            label: const Text('Reconnect now'),
+                          ),
+                        const SizedBox(height: 8),
                         OutlinedButton(
                           onPressed: () async {
                             await ref.read(gameProvider.notifier).leave();
@@ -238,9 +299,11 @@ class ActionBar extends ConsumerWidget {
     final game = ref.read(gameProvider.notifier);
     final s = state;
     final buttons = <Widget>[];
-    if (s.actingPlayer == me) {
+    // Turn buttons wait until the board has finished showing the move.
+    final busy = ref.watch(boardBusyProvider);
+    if (s.actingPlayer == me && !busy) {
       for (final (label, a) in turnActions(s, me)) {
-        final primary = a is Roll || a is Buy || a is PayDebt;
+        final primary = a is Buy || a is PayDebt || a is EndTurn;
         buttons.add(primary
             ? FilledButton(
                 key: ValueKey('act-${a.runtimeType}'),
@@ -334,60 +397,61 @@ class _EmoteBar extends ConsumerWidget {
       );
 }
 
-const _faces = ['', '⚀', '⚁', '⚂', '⚃', '⚄', '⚅'];
-
-class _BoardCentre extends StatelessWidget {
-  const _BoardCentre({required this.view});
-  final GameView view;
+/// Auction status with a countdown that restarts on every new bid (the
+/// server closes the auction 10 s after the last bid).
+class _AuctionInfo extends StatefulWidget {
+  const _AuctionInfo({super.key, required this.text});
+  final String text;
 
   @override
-  Widget build(BuildContext context) {
-    final s = view.state!;
-    final dice = s.lastDice;
-    final auc = s.auction;
-    final now = DateTime.now().millisecondsSinceEpoch;
-    final popups = view.popups.where((p) => now - p.at < 4000).toList();
-    return LayoutBuilder(builder: (context, c) {
-      final big = max(28.0, c.maxWidth * 0.14);
-      return Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-        if (dice.length == 2)
-          AnimatedSwitcher(
-            duration: const Duration(milliseconds: 400),
-            transitionBuilder: (child, a) => RotationTransition(
-                turns: a, child: ScaleTransition(scale: a, child: child)),
-            child: Text('${_faces[dice[0]]}${_faces[dice[1]]}',
-                key: ValueKey('dice-${s.version}-${dice.join()}'),
-                style: TextStyle(fontSize: big, height: 1)),
-          ),
-        if (auc != null)
-          Padding(
-            padding: const EdgeInsets.all(4),
-            child: Text(
-              'Auction: ${s.tiles[auc.tileIndex].name}\n'
-              '${auc.highBidder == null ? 'No bids yet' : 'High bid ${formatRupees(auc.highBid)} by ${s.player(auc.highBidder)?.name}'}',
-              textAlign: TextAlign.center,
-              style: const TextStyle(fontWeight: FontWeight.bold),
-            ),
-          ),
-        for (final p in popups.reversed.take(c.maxHeight > 200 ? 3 : 1))
-          Padding(
-            padding: const EdgeInsets.only(top: 4),
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-              decoration: BoxDecoration(
-                  color: Theme.of(context).colorScheme.secondaryContainer,
-                  borderRadius: BorderRadius.circular(8)),
-              child: Text(p.text,
-                  textAlign: TextAlign.center,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                      fontSize: max(10, min(14, c.maxWidth * 0.045)))),
-            ),
-          ),
-      ]);
+  State<_AuctionInfo> createState() => _AuctionInfoState();
+}
+
+class _AuctionInfoState extends State<_AuctionInfo> {
+  static const _seconds = 10;
+  int _left = _seconds;
+  Timer? _timer;
+
+  @override
+  void initState() {
+    super.initState();
+    _restart();
+  }
+
+  @override
+  void didUpdateWidget(_AuctionInfo old) {
+    super.didUpdateWidget(old);
+    if (old.text != widget.text) _restart();
+  }
+
+  void _restart() {
+    _timer?.cancel();
+    _left = _seconds;
+    _timer = Timer.periodic(const Duration(seconds: 1), (t) {
+      if (!mounted) return;
+      setState(() => _left = max(0, _left - 1));
+      if (_left == 0) t.cancel();
     });
   }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => Container(
+        margin: const EdgeInsets.only(top: 6),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        decoration: BoxDecoration(
+            color: Colors.black.withValues(alpha: 0.55),
+            borderRadius: BorderRadius.circular(12)),
+        child: Text('${widget.text}\nCloses in $_left s',
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+                color: Colors.white, fontWeight: FontWeight.bold)),
+      );
 }
 
 /// Cash, token and status of every player.

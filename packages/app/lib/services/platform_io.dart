@@ -100,6 +100,7 @@ Future<LocalHostHandle> startLocalHost({
   required BoardData board,
   required String roomName,
   String? password,
+  String? resumeCode,
 }) async {
   Directory saves;
   try {
@@ -114,7 +115,15 @@ Future<LocalHostHandle> startLocalHost({
   } on SocketException {
     port = await server.start(port: 0);
   }
-  final room = server.hub.createRoom(password: password);
+  // After an app restart the host resumes its saved room (same code, same
+  // seats) so everyone can rejoin with their session tokens.
+  Room? resumed;
+  if (resumeCode != null) {
+    try {
+      resumed = server.hub.resume(resumeCode);
+    } catch (_) {}
+  }
+  final room = resumed ?? server.hub.createRoom(password: password);
   final announcer = DiscoveryAnnouncer(
       info: () => {
             'name': roomName,

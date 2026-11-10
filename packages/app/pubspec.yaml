@@ -27,6 +27,7 @@ dependencies:
     path: ../protocol
   vyapari_server:
     path: ../server
+  wakelock_plus: ^1.8.2
   web_socket_channel: ^3.0.3
 
 dev_dependencies:

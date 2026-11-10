@@ -127,7 +127,7 @@ void main() {
     testWidgets('turn buttons hidden when it is not my turn', (tester) async {
       await pumpWith(tester, const GameScreen(),
           view: GameView(state: started(), me: 'p1'));
-      expect(find.byKey(const ValueKey('act-Roll')), findsNothing);
+      expect(find.byKey(const ValueKey('roll-hint')), findsNothing);
       expect(find.byKey(const ValueKey('act-EndTurn')), findsNothing);
       expect(find.byKey(const ValueKey('trade-button')), findsOneWidget);
     });
@@ -136,7 +136,7 @@ void main() {
       var s = started(rules: const HouseRules(auctions: false));
       final c = await pumpWith(tester, const GameScreen(),
           view: GameView(state: s, me: 'p0'));
-      expect(find.byKey(const ValueKey('act-Roll')), findsOneWidget);
+      expect(find.byKey(const ValueKey('roll-hint')), findsOneWidget);
       expect(find.byKey(const ValueKey('act-EndTurn')), findsNothing);
       // Land on an unowned city: Buy and Skip.
       s = withPlayer(s, 'p0', (p) => p.copyWith(position: 35));
@@ -145,7 +145,7 @@ void main() {
       await tester.pump();
       expect(find.byKey(const ValueKey('act-Buy')), findsOneWidget);
       expect(find.byKey(const ValueKey('act-DeclineBuy')), findsOneWidget);
-      expect(find.byKey(const ValueKey('act-Roll')), findsNothing);
+      expect(find.byKey(const ValueKey('roll-hint')), findsNothing);
       // After buying: End turn only.
       s = apply(const Buy('p0'), s).state;
       c.read(gameProvider.notifier).debugSetView(GameView(state: s, me: 'p0'));
@@ -193,8 +193,14 @@ void main() {
       c
           .read(gameProvider.notifier)
           .applyPatch(PatchMsg.diff(s, next.state, next.events));
-      await tester.pump(const Duration(milliseconds: 700));
-      expect(find.textContaining('rent to Player 1'), findsWidgets);
+      // Dice, three hops, then the rent message on the board.
+      var shown = false;
+      for (var t = 0; t < 200 && !shown; t++) {
+        await tester.pump(const Duration(milliseconds: 20));
+        shown = find.textContaining('rent to Player 1').evaluate().isNotEmpty;
+      }
+      expect(shown, isTrue);
+      await tester.pump(const Duration(seconds: 3));
       expect(c.read(gameProvider).state!.player('p0')!.cash,
           1500000 - s.tiles[31].rent[0]);
     });

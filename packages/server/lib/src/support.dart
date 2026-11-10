@@ -24,6 +24,7 @@ class ServerConfig {
     this.maxFailedJoins = 5,
     this.joinBlockTime = const Duration(minutes: 1),
     this.enableTurnTimer = true,
+    this.paceAnimations = true,
   });
 
   /// Online mode: many rooms, 6-character codes, `hello.create` allowed.
@@ -61,6 +62,10 @@ class ServerConfig {
 
   /// Whether the per-turn timer runs.
   final bool enableTurnTimer;
+
+  /// Wait for clients to finish animating a move (dice, steps, card pop-up)
+  /// before a bot acts, so players can follow what happened. Off in tests.
+  final bool paceAnimations;
 }
 
 /// One client connection (WebSocket in production, fakes in tests).
@@ -163,3 +168,32 @@ String newRoomCode(RandomSource rng, {required bool online}) {
 /// Random hex token.
 String newToken(RandomSource rng, [int bytes = 16]) =>
     rng.nextBytes(bytes).map((b) => b.toRadixString(16).padLeft(2, '0')).join();
+
+/// How long clients take to show [events]: dice tumble, one hop per tile,
+/// a card pop-up, money toasts. Keep in step with the app's board playback.
+Duration animationTime(List<GameEvent> events) {
+  var ms = 0;
+  for (final e in events) {
+    switch (e.type) {
+      case 'rolled':
+        ms += 900;
+      case 'moved':
+        final steps = (e.data['steps'] as int? ?? 0).abs();
+        ms += 250 + steps * 200;
+      case 'card':
+        ms += 3000;
+      case 'jailed':
+        ms += 1000;
+      case 'rent' ||
+            'tax' ||
+            'bought' ||
+            'salary' ||
+            'auction_won' ||
+            'pot' ||
+            'debt' ||
+            'bankrupt':
+        ms += 1300;
+    }
+  }
+  return Duration(milliseconds: ms > 12000 ? 12000 : ms);
+}

@@ -251,6 +251,7 @@ void main() {
         () async {
       await boot(
           config: const ServerConfig(
+              paceAnimations: false,
               botDelay: Duration(milliseconds: 5),
               rejoinWindow: Duration(milliseconds: 300),
               heartbeatSweep: Duration(milliseconds: 100)));
@@ -273,6 +274,7 @@ void main() {
       // Online mode: a dropped host does not pause the game.
       await boot(
           config: const ServerConfig(
+              paceAnimations: false,
               online: true,
               botDelay: Duration.zero,
               tradeReviewDelay: Duration.zero));

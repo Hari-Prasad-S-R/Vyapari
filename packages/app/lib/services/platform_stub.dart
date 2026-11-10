@@ -18,6 +18,7 @@ Future<LocalHostHandle> startLocalHost({
   required BoardData board,
   required String roomName,
   String? password,
+  String? resumeCode,
 }) =>
     throw UnsupportedError('Hosting is not available in the browser');
 
