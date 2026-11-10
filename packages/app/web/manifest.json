@@ -1,12 +1,12 @@
 {
-    "name": "vyapari_app",
-    "short_name": "vyapari_app",
+    "name": "Vyapari",
+    "short_name": "Vyapari",
     "start_url": ".",
     "display": "standalone",
-    "background_color": "#0175C2",
-    "theme_color": "#0175C2",
-    "description": "A new Flutter project.",
-    "orientation": "portrait-primary",
+    "background_color": "#0B6E5F",
+    "theme_color": "#0B6E5F",
+    "description": "Indian property trading board game: buy cities, build, trade and win.",
+    "orientation": "any",
     "prefer_related_applications": false,
     "icons": [
         {

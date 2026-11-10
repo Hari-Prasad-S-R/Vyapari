@@ -11,7 +11,7 @@ import '../state/game_controller.dart';
 import '../state/profile.dart';
 import '../ui.dart';
 import '../widgets/board.dart' show BoardColors;
-import '../widgets/dice.dart';
+import '../widgets/logo.dart';
 import 'help.dart';
 import 'join.dart';
 
@@ -476,12 +476,19 @@ class _Hero extends StatelessWidget {
           ],
         ),
         child: const Column(children: [
-          Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-            Die(face: 5, size: 34),
-            SizedBox(width: 10),
-            Die(face: 3, size: 34),
-          ]),
-          SizedBox(height: 10),
+          DecoratedBox(
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.all(Radius.circular(18)),
+              border: Border.fromBorderSide(
+                  BorderSide(color: BoardColors.gold, width: 2)),
+              boxShadow: [
+                BoxShadow(
+                    blurRadius: 12, color: Colors.black45, offset: Offset(0, 4))
+              ],
+            ),
+            child: VyapariLogo(size: 72),
+          ),
+          SizedBox(height: 12),
           Text('VYAPARI',
               style: TextStyle(
                   color: BoardColors.gold,

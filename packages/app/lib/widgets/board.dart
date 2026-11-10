@@ -7,6 +7,7 @@ import 'package:vyapari_protocol/vyapari_protocol.dart';
 
 import '../ui.dart';
 import 'dice.dart';
+import 'logo.dart';
 
 /// Smallest font used on the board.
 const minBoardFont = 10.0;
@@ -242,15 +243,6 @@ class _BoardPainter extends CustomPainter {
       }
       canvas.drawRect(r, line);
     }
-    // Centre logo.
-    _text(
-        canvas,
-        Rect.fromLTWH(c.left, c.top + c.height * 0.06, c.width, c.height * 0.2),
-        [
-          ('VYAPARI', max(minBoardFont, size.width * 0.07), FontWeight.w900),
-        ],
-        color: BoardColors.gold,
-        shadow: true);
   }
 
   void _corner(Canvas canvas, BoardGeometry g, Tile t, Rect r) {
@@ -733,6 +725,19 @@ class BoardViewState extends State<BoardView> {
               if (i != null) showTileDetails(context, s, i);
             },
             child: CustomPaint(painter: _BoardPainter(s, _fontTick)),
+          ),
+        ),
+        // Logo and name across the top of the felt.
+        Positioned.fromRect(
+          rect: Rect.fromLTWH(centre.left, centre.top + centre.height * 0.06,
+              centre.width, centre.height * 0.17),
+          child: IgnorePointer(
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              child: VyapariWordmark(
+                  height: max(22, centre.width * 0.13),
+                  color: BoardColors.gold),
+            ),
           ),
         ),
         Positioned.fromRect(

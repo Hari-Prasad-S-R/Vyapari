@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:vyapari_core/vyapari_core.dart';
 
 /// App version shown on Home.
-const appVersion = '0.1.0';
+const appVersion = '0.2.1';
 
 /// Marigold accent (buttons, highlights, logo).
 const saffron = Color(0xFFF2A922);

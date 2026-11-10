@@ -1,0 +1,4 @@
+tags:
+  golden:
+  icons:
+    skip: "Run with --tags icons --run-skipped to regenerate branding PNGs"
