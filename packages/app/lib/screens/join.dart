@@ -161,7 +161,10 @@ class _JoinScreenState extends ConsumerState<JoinScreen> {
                 child: Column(mainAxisSize: MainAxisSize.min, children: [
                   CircularProgressIndicator(),
                   SizedBox(height: 12),
-                  Text('Looking for games on this Wi-Fi or hotspot…',
+                  Text(
+                      'Looking for games on this Wi-Fi or hotspot…\n'
+                      'Checking every device on the network can take up to 20 s.\n'
+                      "Still nothing? Use the IP address tab with the IP shown in the host's lobby.",
                       textAlign: TextAlign.center),
                 ]),
               ),
@@ -173,7 +176,7 @@ class _JoinScreenState extends ConsumerState<JoinScreen> {
                 leading: const Icon(Icons.casino),
                 title: Text(g.name),
                 subtitle: Text(
-                    'Room ${g.code} · ${g.via.contains(Found.udp) ? '${g.players}/${g.maxPlayers} players' : 'found via Bonjour'} · ${g.ip}'),
+                    'Room ${g.code} · ${g.via.contains(Found.udp) || g.via.contains(Found.scan) ? '${g.players}/${g.maxPlayers} players' : 'found via Bonjour'} · ${g.ip}'),
                 trailing: g.hasPassword
                     ? const Icon(Icons.lock)
                     : const Icon(Icons.chevron_right),

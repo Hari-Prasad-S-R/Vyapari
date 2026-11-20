@@ -134,6 +134,26 @@ class RoomHub {
             },
       ];
 
+  /// Rooms this local host offers, for phones that find it by scanning the
+  /// Wi-Fi (when broadcasts and mDNS are blocked, as on many mesh routers).
+  /// Not offered by online servers.
+  Map<String, Object?>? localInfo() => config.online
+      ? null
+      : {
+          'app': 'vyapari',
+          'rooms': [
+            for (final r in rooms.values)
+              {
+                'code': r.code,
+                'players': r.state.players.length,
+                'maxPlayers': r.state.config.maxPlayers,
+                'host': r.state.player(r.state.hostId)?.name,
+                'hasPassword': r.password != null,
+                'phase': r.state.phase.name,
+              },
+          ],
+        };
+
   /// Starts handling a new connection.
   Connection connect(Peer peer) => Connection._(this, peer);
 

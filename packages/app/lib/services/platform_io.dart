@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:bonsoir/bonsoir.dart';
@@ -21,28 +22,76 @@ bool get canDiscover => true;
 /// QR scanning needs a camera (phones only).
 bool get canScan => Platform.isAndroid || Platform.isIOS;
 
-/// Best LAN IPv4 of this device (hotspot or Wi-Fi), or `null`.
+/// Best LAN IPv4 of this device (hotspot or Wi-Fi), or `null`. Mobile-data
+/// interfaces are skipped so the lobby never shows a carrier address.
 Future<String?> localIp() async {
   try {
     final ifaces = await NetworkInterface.list(type: InternetAddressType.IPv4);
-    String? fallback;
-    for (final i in ifaces) {
-      for (final a in i.addresses) {
-        if (a.isLoopback || a.isLinkLocal) continue;
-        final ip = a.address;
-        // Prefer private LAN ranges (hotspots use 192.168.x / 172.20.x).
-        if (ip.startsWith('192.168.') ||
-            ip.startsWith('10.') ||
-            ip.startsWith('172.')) {
-          return ip;
-        }
-        fallback ??= ip;
-      }
-    }
-    return fallback;
+    return pickLanIp([
+      for (final i in ifaces)
+        for (final a in i.addresses) (i.name, a.address),
+    ]);
   } catch (_) {
     return null;
   }
+}
+
+/// Android drops Wi-Fi broadcast and multicast packets unless an app holds a
+/// multicast lock; discovery (UDP + mDNS) needs it while listening/hosting.
+Future<void> _multicastLock(bool on) async {
+  if (!Platform.isAndroid) return;
+  try {
+    await const MethodChannel('vyapari/settings')
+        .invokeMethod<void>('multicastLock', on);
+  } catch (_) {}
+}
+
+/// Probes [targets] for a Vyapari host on [port] by asking for `/local`.
+/// Works on networks that block broadcasts (many mesh routers), because it
+/// only uses ordinary direct connections.
+Future<List<NearbyHost>> scanLan(List<String> targets,
+    {int port = 47800, int parallel = 48}) async {
+  final found = <NearbyHost>[];
+  final client = HttpClient()
+    ..connectionTimeout = const Duration(milliseconds: 700);
+  var next = 0;
+  Future<void> worker() async {
+    while (next < targets.length) {
+      final ip = targets[next++];
+      try {
+        final req = await client
+            .get(ip, port, '/local')
+            .timeout(const Duration(milliseconds: 900));
+        final res = await req.close().timeout(const Duration(seconds: 2));
+        if (res.statusCode != 200) {
+          await res.drain<void>();
+          continue;
+        }
+        final body = jsonDecode(await res.transform(utf8.decoder).join());
+        if (body is! Map || body['app'] != 'vyapari') continue;
+        for (final r in (body['rooms'] as List? ?? const [])) {
+          if (r is! Map) continue;
+          final host = r['host'] as String?;
+          found.add(NearbyHost(
+            name: host == null ? 'Vyapari game' : "$host's game",
+            code: r['code'] as String,
+            ip: ip,
+            port: port,
+            players: r['players'] as int? ?? 0,
+            maxPlayers: r['maxPlayers'] as int? ?? 8,
+            hasPassword: r['hasPassword'] as bool? ?? false,
+            via: const {Found.scan},
+          ));
+        }
+      } catch (_) {
+        // Nothing listening there.
+      }
+    }
+  }
+
+  await Future.wait([for (var k = 0; k < parallel; k++) worker()]);
+  client.close(force: true);
+  return found;
 }
 
 /// Whether any Wi-Fi/hotspot network is up.
@@ -133,6 +182,7 @@ Future<LocalHostHandle> startLocalHost({
             'maxPlayers': room.state.config.maxPlayers,
             'hasPassword': password != null && password.isNotEmpty,
           });
+  await _multicastLock(true);
   try {
     await announcer.start();
   } catch (_) {}
@@ -164,6 +214,7 @@ Future<LocalHostHandle> startLocalHost({
     port: port,
     stop: () async {
       announcer.stop();
+      await _multicastLock(false);
       try {
         await mdns?.stop();
       } catch (_) {}
@@ -183,13 +234,36 @@ Stream<List<NearbyHost>> discoverNearby() {
   StreamSubscription<BonsoirDiscoveryEvent>? mdnsSub;
   var udp = <NearbyHost>[];
   final viaMdns = <String, NearbyHost>{};
+  var viaScan = <NearbyHost>[];
+  Timer? rescan;
+  var scanning = false;
   void emit() {
-    if (!c.isClosed) c.add(mergeNearby(udp, viaMdns.values.toList()));
+    if (!c.isClosed) {
+      c.add(mergeNearby(udp, viaMdns.values.toList(), viaScan));
+    }
+  }
+
+  Future<void> scanOnce() async {
+    if (scanning || c.isClosed) return;
+    scanning = true;
+    try {
+      final ip = await localIp();
+      if (ip != null) {
+        viaScan = await scanLan(lanScanTargets(ip));
+        emit();
+      }
+    } finally {
+      scanning = false;
+    }
   }
 
   c = StreamController<List<NearbyHost>>(
     onListen: () async {
       var anyStarted = false;
+      await _multicastLock(true);
+      // Broadcasts may never arrive on mesh Wi-Fi: scan directly as well.
+      unawaited(scanOnce());
+      rescan = Timer.periodic(const Duration(seconds: 15), (_) => scanOnce());
       try {
         listener = DiscoveryListener();
         await listener!.start();
@@ -236,9 +310,12 @@ Stream<List<NearbyHost>> discoverNearby() {
       } catch (_) {
         // mDNS unavailable on this device; UDP may still work.
       }
-      if (!anyStarted) c.addError('Nearby discovery is not available here');
+      // The Wi-Fi scan still runs even if UDP and mDNS could not start.
+      if (!anyStarted) emit();
     },
     onCancel: () async {
+      rescan?.cancel();
+      await _multicastLock(false);
       await udpSub?.cancel();
       await listener?.stop();
       await mdnsSub?.cancel();

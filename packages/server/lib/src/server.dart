@@ -81,6 +81,12 @@ class GameServer {
               }),
               headers: {'content-type': 'application/json'});
         }
+        if (path == 'local') {
+          final info = hub.localInfo();
+          if (info == null) return Response.notFound('Not a local host');
+          return Response.ok(jsonEncode({...info, 'v': protocolVersion}),
+              headers: {'content-type': 'application/json'});
+        }
         if (path == 'rooms') {
           return Response.ok(jsonEncode(hub.publicRooms()),
               headers: {'content-type': 'application/json'});

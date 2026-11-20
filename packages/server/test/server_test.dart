@@ -51,6 +51,20 @@ void main() {
     client.close();
   });
 
+  test('local hosts describe their room at /local for Wi-Fi scanning',
+      () async {
+    await boot();
+    final client = HttpClient();
+    final res = await (await client.get('127.0.0.1', port, '/local')).close();
+    final body = jsonDecode(await res.transform(utf8.decoder).join()) as Map;
+    expect(res.statusCode, 200);
+    expect(body['app'], 'vyapari');
+    final rooms = body['rooms'] as List;
+    expect(rooms.single['code'], room.code);
+    expect(rooms.single['hasPassword'], isFalse);
+    client.close();
+  });
+
   test('3 clients: host starts, all get the same state and turn order',
       () async {
     await boot();
