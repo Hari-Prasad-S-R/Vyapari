@@ -68,7 +68,7 @@ cd packages/app && flutter run
 Native server binary:
 
 ```bash
-dart compile exe server_bin/bin/main.dart -o build/vyapari_server
+mkdir -p build && dart compile exe server_bin/bin/main.dart -o build/vyapari_server
 ```
 
 ### Docker (home lab)

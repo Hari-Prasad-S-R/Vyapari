@@ -12,7 +12,7 @@ COPY packages/core packages/core
 COPY packages/protocol packages/protocol
 COPY packages/server packages/server
 COPY server_bin server_bin
-RUN dart compile exe server_bin/bin/main.dart -o /out/vyapari_server
+RUN mkdir -p /out && dart compile exe server_bin/bin/main.dart -o /out/vyapari_server
 # SQLite shared library for the store, copied into the minimal runtime.
 RUN apt-get update && apt-get install -y --no-install-recommends libsqlite3-0 \
  && mkdir -p /runtime/usr/lib \
